@@ -12,7 +12,7 @@ use compio::{
     net::TcpStream,
 };
 use compio_io::compat::SyncStream;
-use cyper_tls::TlsStream;
+use compio_tls::TlsStream;
 #[cfg(feature = "client")]
 use hyper::client::connect::{Connected, Connection};
 use hyper::Uri;

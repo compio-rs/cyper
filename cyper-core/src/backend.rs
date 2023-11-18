@@ -1,6 +1,6 @@
 use std::io;
 
-use cyper_tls::TlsConnector;
+use compio_tls::TlsConnector;
 
 /// Represents TLS backend options
 #[derive(Debug, Clone, Copy)]

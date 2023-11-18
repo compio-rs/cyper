@@ -12,7 +12,7 @@ An HTTP library based on [compio](https://github.com/compio-rs/compio) and [hype
 Add `compio` and `cyper` as dependency:
 
 ```
-compio = { version = "0.9.0.beta.1", features = ["macros"] }
+compio = { version = "0.9.0.beta.2", features = ["macros"] }
 cyper = "0.1.0-beta.1"
 ```
 
