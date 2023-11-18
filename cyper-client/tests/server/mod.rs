@@ -4,8 +4,8 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
 };
 
-use compio_http::{Acceptor, CompioExecutor};
 use compio_net::TcpListener;
+use cyper_util::{Acceptor, CompioExecutor};
 use futures_channel::oneshot;
 
 pub struct Server {

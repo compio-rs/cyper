@@ -1,4 +1,4 @@
-//! Code from compio_http.
+//! Code from cyper_util.
 
 use hyper::{
     header::{Entry, HeaderValue, OccupiedEntry},

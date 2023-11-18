@@ -3,7 +3,7 @@ mod server;
 #[cfg(feature = "json")]
 use std::collections::HashMap;
 
-use compio_http_client::Client;
+use cyper_client::Client;
 #[cfg(feature = "json")]
 use http::header::CONTENT_TYPE;
 

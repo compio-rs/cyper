@@ -1,5 +1,5 @@
 [package]
-name = "compio-tls"
+name = "cyper-tls"
 version = "0.1.0"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "tls"]

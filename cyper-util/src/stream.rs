@@ -9,7 +9,7 @@ use std::{
 use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
 use compio_io::{compat::SyncStream, AsyncRead, AsyncWrite};
 use compio_net::TcpStream;
-use compio_tls::TlsStream;
+use cyper_tls::TlsStream;
 #[cfg(feature = "client")]
 use hyper::client::connect::{Connected, Connection};
 use hyper::Uri;

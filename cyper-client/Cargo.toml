@@ -1,5 +1,5 @@
 [package]
-name = "compio-http-client"
+name = "cyper-client"
 version = "0.1.0"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
@@ -16,8 +16,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 compio-buf = { workspace = true, features = ["bytes"] }
 compio-runtime = { workspace = true, features = ["time"] }
-compio-tls = { workspace = true }
-compio-http = { workspace = true, features = ["client"] }
+cyper-tls = { workspace = true }
+cyper-util = { workspace = true, features = ["client"] }
 
 http = "0.2"
 hyper = { workspace = true, features = ["client", "http1"] }
@@ -34,7 +34,7 @@ url = "2"
 [dev-dependencies]
 compio-net = { workspace = true, features = ["runtime"] }
 compio-macros = { workspace = true }
-compio-http = { workspace = true, features = ["server"] }
+cyper-util = { workspace = true, features = ["server"] }
 
 futures-channel = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
@@ -42,11 +42,11 @@ serde = { version = "1", features = ["derive"] }
 
 [features]
 default = ["native-tls"]
-native-tls = ["compio-http/native-tls"]
-rustls = ["compio-http/rustls"]
-vendored = ["compio-http/vendored"]
+native-tls = ["cyper-util/native-tls"]
+rustls = ["cyper-util/rustls"]
+vendored = ["cyper-util/vendored"]
 json = ["dep:serde_json"]
-all = ["json", "native-tls", "rustls", "compio-http/all"]
+all = ["json", "native-tls", "rustls", "cyper-util/all"]
 
-read_buf = ["compio-http/read_buf"]
+read_buf = ["cyper-util/read_buf"]
 nightly = ["read_buf"]

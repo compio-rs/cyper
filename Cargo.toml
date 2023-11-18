@@ -1,5 +1,5 @@
 [workspace]
-members = ["compio-tls", "compio-http", "compio-http-client"]
+members = ["cyper-tls", "cyper-util", "cyper-client"]
 resolver = "2"
 
 [workspace.package]
@@ -15,8 +15,8 @@ compio-runtime = "0.2.0-beta.1"
 compio-macros = "0.1.1-beta.1"
 compio-io = "0.1.0-beta.1"
 compio-net = "0.2.0-beta.1"
-compio-tls = { path = "./compio-tls", version = "0.1.0" }
-compio-http = { path = "./compio-http", version = "0.1.0" }
+cyper-tls = { path = "./cyper-tls", version = "0.1.0" }
+cyper-util = { path = "./cyper-util", version = "0.1.0" }
 
 cfg-if = "1.0.0"
 futures-channel = "0.3.29"

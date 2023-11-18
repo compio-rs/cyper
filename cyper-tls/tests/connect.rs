@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use compio_io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use compio_net::TcpStream;
-use compio_tls::TlsConnector;
+use cyper_tls::TlsConnector;
 
 async fn connect(connector: TlsConnector) {
     let stream = TcpStream::connect("www.example.com:443").await.unwrap();

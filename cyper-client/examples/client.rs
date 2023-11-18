@@ -1,4 +1,4 @@
-use compio_http_client::Client;
+use cyper_client::Client;
 
 #[compio_macros::main]
 async fn main() {
