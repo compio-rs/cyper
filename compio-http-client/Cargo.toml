@@ -19,7 +19,7 @@ compio-runtime = { workspace = true, features = ["time"] }
 compio-tls = { workspace = true }
 compio-http = { workspace = true, features = ["client"] }
 
-http = "0.2"
+http = "1.0"
 hyper = { workspace = true, features = ["client", "http1"] }
 
 base64 = "0.21"
