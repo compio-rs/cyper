@@ -6,7 +6,7 @@ use std::{
     task::{ready, Context, Poll},
 };
 
-use compio_net::{TcpListener, TcpStream};
+use compio::net::{TcpListener, TcpStream};
 use compio_tls::TlsStream;
 use hyper::server::accept::Accept;
 
@@ -27,7 +27,7 @@ impl Acceptor {
         Ok(Self::from_listener(listener))
     }
 
-    /// Create [`Acceptor`] from an existing [`compio_net::TcpListener`].
+    /// Create [`Acceptor`] from an existing [`compio::net::TcpListener`].
     pub fn from_listener(listener: TcpListener) -> Self {
         Self {
             listener,
@@ -77,7 +77,7 @@ pub struct TlsAcceptor {
 }
 
 impl TlsAcceptor {
-    /// Create [`TlsAcceptor`] from an existing [`compio_net::TcpListener`] and
+    /// Create [`TlsAcceptor`] from an existing [`compio::net::TcpListener`] and
     /// [`compio_tls::TlsAcceptor`].
     pub fn from_listener(tcp_listener: TcpListener, tls_acceptor: compio_tls::TlsAcceptor) -> Self {
         Self {

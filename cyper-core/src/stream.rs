@@ -6,9 +6,12 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio_buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut};
-use compio_io::{compat::SyncStream, AsyncRead, AsyncWrite};
-use compio_net::TcpStream;
+use compio::{
+    buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
+    io::{AsyncRead, AsyncWrite},
+    net::TcpStream,
+};
+use compio_io::compat::SyncStream;
 use compio_tls::TlsStream;
 #[cfg(feature = "client")]
 use hyper::client::connect::{Connected, Connection};

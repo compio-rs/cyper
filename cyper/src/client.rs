@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use compio_http::{CompioExecutor, Connector, TlsBackend};
+use cyper_core::{CompioExecutor, Connector, TlsBackend};
 use hyper::{Body, HeaderMap, Method, Uri};
 
 use crate::{IntoUrl, Request, RequestBuilder, Response, Result};
@@ -42,7 +42,7 @@ impl Client {
 
         let future = self.client.client.request(request);
         let res = if let Some(timeout) = timeout {
-            compio_runtime::time::timeout(timeout, future)
+            compio::time::timeout(timeout, future)
                 .await
                 .map_err(|_| crate::Error::Timeout)??
         } else {

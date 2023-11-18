@@ -10,14 +10,14 @@ use send_wrapper::SendWrapper;
 
 use crate::{HttpStream, TlsBackend};
 
-/// An executor service based on [`compio_runtime`]. It uses
-/// [`compio_runtime::spawn`] interally.
+/// An executor service based on [`compio::runtime`]. It uses
+/// [`compio::runtime::spawn`] interally.
 #[derive(Debug, Default, Clone)]
 pub struct CompioExecutor;
 
 impl<F: Future<Output = ()> + Send + 'static> Executor<F> for CompioExecutor {
     fn execute(&self, fut: F) {
-        compio_runtime::spawn(fut).detach();
+        compio::runtime::spawn(fut).detach();
     }
 }
 

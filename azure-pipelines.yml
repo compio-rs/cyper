@@ -45,14 +45,6 @@ jobs:
       #     cargo test --workspace --features all
       #   displayName: TestStable
 
-      - script: |
-          rustup toolchain install nightly
-          cargo +nightly test --workspace --features all,polling,native-tls,nightly --no-default-features
-        displayName: TestNightly-polling
-      # - script: |
-      #     cargo test --workspace --features all,polling --no-default-features
-      #   displayName: TestStable-polling
-
   - job: Test_Mac
     strategy:
       matrix:

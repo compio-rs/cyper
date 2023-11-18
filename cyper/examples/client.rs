@@ -1,6 +1,6 @@
-use compio_http_client::Client;
+use cyper::Client;
 
-#[compio_macros::main]
+#[compio::main]
 async fn main() {
     let client = Client::new();
     let response = client.get("https://www.example.com/").send().await.unwrap();

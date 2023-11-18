@@ -1,6 +1,6 @@
 [package]
-name = "compio-http"
-version = "0.1.0"
+name = "cyper-core"
+version = "0.1.0-beta.1"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
 edition = { workspace = true }
@@ -14,10 +14,8 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-compio-buf = { workspace = true }
+compio = { workspace = true }
 compio-io = { workspace = true, features = ["compat"] }
-compio-runtime = { workspace = true }
-compio-net = { workspace = true, features = ["runtime"] }
 compio-tls = { workspace = true }
 
 native-tls = { workspace = true, optional = true }
