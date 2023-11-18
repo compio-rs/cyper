@@ -23,8 +23,9 @@ rustls-native-certs = { workspace = true, optional = true }
 
 cfg-if = { workspace = true }
 hyper = { workspace = true }
+hyper-util = { workspace = true }
 send_wrapper = { workspace = true, features = ["futures"] }
-tokio = { workspace = true }
+tower-service = "0.3.2"
 
 [features]
 default = ["native-tls"]
@@ -32,8 +33,8 @@ native-tls = ["compio/native-tls", "dep:native-tls"]
 rustls = ["compio/rustls", "dep:rustls", "dep:rustls-native-certs"]
 vendored = ["native-tls?/vendored"]
 
-client = ["hyper/client"]
-server = ["hyper/server"]
+client = ["hyper-util/client-legacy"]
+server = ["hyper-util/server-auto"]
 
 all = ["native-tls", "rustls", "client", "server"]
 

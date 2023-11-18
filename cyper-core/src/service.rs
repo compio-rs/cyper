@@ -5,8 +5,9 @@ use std::{
     task::{Context, Poll},
 };
 
-use hyper::{rt::Executor, service::Service, Uri};
+use hyper::{rt::Executor, Uri};
 use send_wrapper::SendWrapper;
+use tower_service::Service;
 
 use crate::{HttpStream, TlsBackend};
 

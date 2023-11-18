@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use cyper_core::{CompioExecutor, Connector, TlsBackend};
-use hyper::{Body, HeaderMap, Method, Uri};
+use hyper::{HeaderMap, Method, Uri};
 
 use crate::{IntoUrl, Request, RequestBuilder, Response, Result};
 
@@ -36,7 +36,7 @@ impl Client {
                     .expect("a parsed Url should always be a valid Uri"),
             )
             .version(version)
-            .body(body.unwrap_or_else(Body::empty))?;
+            .body(body)?;
         *request.headers_mut() = self.client.headers.clone();
         crate::util::replace_headers(request.headers_mut(), headers);
 
@@ -92,7 +92,7 @@ impl Client {
 
 #[derive(Debug)]
 struct ClientInner {
-    client: hyper::Client<Connector, Body>,
+    client: hyper_util::client::legacy::Client<Connector, String>,
     headers: HeaderMap,
 }
 
@@ -122,8 +122,7 @@ impl ClientBuilder {
 
     /// Returns a `Client` that uses this `ClientBuilder` configuration.
     pub fn build(self) -> Client {
-        let client = hyper::Client::builder()
-            .executor(CompioExecutor)
+        let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
             .build(Connector::new(self.tls));
         let client_ref = ClientInner {
