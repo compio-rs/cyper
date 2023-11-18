@@ -38,6 +38,7 @@ compio-http = { workspace = true, features = ["server"] }
 
 futures-channel = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
+serde = { version = "1", features = ["derive"] }
 
 [features]
 default = ["native-tls"]
