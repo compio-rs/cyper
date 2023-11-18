@@ -1,12 +1,12 @@
-# Contributing to Compio
+# Contributing to Cyper
 
 Thanks for your help improving the project! We are so happy to have you! :tada:
 
-There are opportunities to contribute to Compio at any level. It doesn't matter if
+There are opportunities to contribute to Cyper at any level. It doesn't matter if
 you are just getting started with Rust or are the most weathered expert, we can
-use your help. If you have any question about Compio, feel free to join [our group](https://t.me/compio_rs) in telegram.
+use your help. If you have any question about Cyper, feel free to join [our group](https://t.me/compio_rs) in telegram.
 
-This guide will walk you through the process of contributing to Compio on following topics:
+This guide will walk you through the process of contributing to Cyper on following topics:
 
 - [General guidelines](#general-guidelines)
   - [Develop Guide](#develop-guide)
@@ -16,11 +16,11 @@ This guide will walk you through the process of contributing to Compio on follow
 
 ## General guidelines
 
-We adhere to [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-conduct). tl;dr: **be nice**. Before making any contribution, check existing issue and pull requests to avoid duplication of effort. Also, in case of bug, try updating to the latest version of Compio and/or rust might help.
+We adhere to [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-conduct). tl;dr: **be nice**. Before making any contribution, check existing issue and pull requests to avoid duplication of effort. Also, in case of bug, try updating to the latest version of Cyper and/or rust might help.
 
 ### Develop Guide
 
-- Use nightly toolchain to develop and run `rustup update` regularly. Compio does use nightly features, behind feature gate; so, when testing with `--all-features` flag, only nightly toolchain would work.
+- Use nightly toolchain to develop and run `rustup update` regularly. Cyper does use nightly features, behind feature gate; so, when testing with `--all-features` flag, only nightly toolchain would work.
 
 ### Style Guide
 
@@ -29,16 +29,16 @@ We adhere to [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-c
 - Use [Angular Convention](https://github.com/angular/angular/blob/main/CONTRIBUTING.md#-commit-message-format) when making commits
 - When adding new crate, add `#![warn(missing_docs)]` at the top of `lib.rs`
 
-[`rustfmt.toml`]: https://github.com/compio-rs/compio/blob/master/rustfmt.toml
+[`rustfmt.toml`]: https://github.com/compio-rs/cyper/blob/master/rustfmt.toml
 
 ## Contribute with issue
 
-If you find a bug or have a feature request, please [open an issue](https://github.com/compio-rs/compio/issues/new/choose) with detailed description. Issues that are lack of informaton or destructive will be requested for more information or closed.
+If you find a bug or have a feature request, please [open an issue](https://github.com/compio-rs/cyper/issues/new/choose) with detailed description. Issues that are lack of informaton or destructive will be requested for more information or closed.
 
 It's also helpful if you can provide the following information:
 
 - A minimal reproducible example
-- The version of Compio you are using.
+- The version of Cyper you are using.
 - The version of Rust you are using.
 - Your environment (OS, Platform, etc).
 
