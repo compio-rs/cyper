@@ -1,4 +1,4 @@
-//! Code from cyper_util.
+//! Code from cyper_core.
 
 use hyper::{
     header::{Entry, HeaderValue, OccupiedEntry},

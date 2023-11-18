@@ -159,7 +159,7 @@ impl Response {
     /// # Examples
     ///
     /// ```
-    /// # extern crate cyper_util;
+    /// # extern crate cyper_core;
     /// # extern crate serde;
     /// #
     /// # use cyper::Error;

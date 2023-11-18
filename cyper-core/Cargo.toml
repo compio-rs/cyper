@@ -1,5 +1,5 @@
 [package]
-name = "cyper-util"
+name = "cyper-core"
 version = "0.1.0-beta.1"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]

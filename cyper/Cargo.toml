@@ -17,7 +17,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio-buf = { workspace = true, features = ["bytes"] }
 compio = { workspace = true, features = ["time"] }
 cyper-tls = { workspace = true }
-cyper-util = { workspace = true, features = ["client"] }
+cyper-core = { workspace = true, features = ["client"] }
 
 http = "0.2"
 hyper = { workspace = true, features = ["client", "http1"] }
@@ -33,7 +33,7 @@ url = "2"
 
 [dev-dependencies]
 compio = { workspace = true, features = ["macros"] }
-cyper-util = { workspace = true, features = ["server"] }
+cyper-core = { workspace = true, features = ["server"] }
 
 futures-channel = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
@@ -41,11 +41,11 @@ serde = { version = "1", features = ["derive"] }
 
 [features]
 default = ["native-tls"]
-native-tls = ["cyper-util/native-tls"]
-rustls = ["cyper-util/rustls"]
-vendored = ["cyper-util/vendored"]
+native-tls = ["cyper-core/native-tls"]
+rustls = ["cyper-core/rustls"]
+vendored = ["cyper-core/vendored"]
 json = ["dep:serde_json"]
-all = ["json", "native-tls", "rustls", "cyper-util/all"]
+all = ["json", "native-tls", "rustls", "cyper-core/all"]
 
-read_buf = ["cyper-util/read_buf"]
+read_buf = ["cyper-core/read_buf"]
 nightly = ["read_buf"]

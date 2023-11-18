@@ -5,7 +5,7 @@ use std::{
 };
 
 use compio::net::TcpListener;
-use cyper_util::{Acceptor, CompioExecutor};
+use cyper_core::{Acceptor, CompioExecutor};
 use futures_channel::oneshot;
 
 pub struct Server {

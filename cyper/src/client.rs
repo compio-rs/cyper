@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use cyper_util::{CompioExecutor, Connector, TlsBackend};
+use cyper_core::{CompioExecutor, Connector, TlsBackend};
 use hyper::{Body, HeaderMap, Method, Uri};
 
 use crate::{IntoUrl, Request, RequestBuilder, Response, Result};
