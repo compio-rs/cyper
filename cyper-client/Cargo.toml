@@ -15,7 +15,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 compio-buf = { workspace = true, features = ["bytes"] }
-compio-runtime = { workspace = true, features = ["time"] }
+compio = { workspace = true, features = ["time"] }
 cyper-tls = { workspace = true }
 cyper-util = { workspace = true, features = ["client"] }
 
@@ -32,9 +32,7 @@ thiserror = "1"
 url = "2"
 
 [dev-dependencies]
-compio-driver = { workspace = true }
-compio-net = { workspace = true, features = ["runtime"] }
-compio-macros = { workspace = true }
+compio = { workspace = true, features = ["macros"] }
 cyper-util = { workspace = true, features = ["server"] }
 
 futures-channel = { workspace = true }

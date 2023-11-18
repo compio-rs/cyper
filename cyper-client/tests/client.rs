@@ -7,7 +7,7 @@ use cyper_client::Client;
 #[cfg(feature = "json")]
 use http::header::CONTENT_TYPE;
 
-#[compio_macros::test]
+#[compio::test]
 async fn response_text() {
     let server = server::http(move |_req| async { http::Response::new("Hello".into()) }).await;
 
@@ -23,7 +23,7 @@ async fn response_text() {
     assert_eq!("Hello", text);
 }
 
-#[compio_macros::test]
+#[compio::test]
 async fn response_bytes() {
     let server = server::http(move |_req| async { http::Response::new("Hello".into()) }).await;
 
@@ -39,7 +39,7 @@ async fn response_bytes() {
     assert_eq!("Hello", bytes);
 }
 
-#[compio_macros::test]
+#[compio::test]
 #[cfg(feature = "json")]
 async fn response_json() {
     let server = server::http(move |_req| async { http::Response::new("\"Hello\"".into()) }).await;
@@ -55,14 +55,14 @@ async fn response_json() {
     assert_eq!("Hello", text);
 }
 
-#[compio_macros::test]
+#[compio::test]
 async fn test_allowed_methods() {
     let resp = Client::new().get("https://www.example.com").send().await;
 
     assert!(resp.is_ok());
 }
 
-#[compio_macros::test]
+#[compio::test]
 #[cfg(feature = "native-tls")]
 async fn test_native_tls() {
     let resp = Client::builder()
@@ -75,7 +75,7 @@ async fn test_native_tls() {
     resp.text().await.unwrap();
 }
 
-#[compio_macros::test]
+#[compio::test]
 #[cfg(feature = "rustls")]
 async fn test_rustls() {
     let resp = Client::builder()

@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use compio_io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use compio_net::TcpStream;
+use compio::{
+    io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    net::TcpStream,
+};
 use cyper_tls::TlsConnector;
 
 async fn connect(connector: TlsConnector) {
@@ -18,7 +20,7 @@ async fn connect(connector: TlsConnector) {
 }
 
 #[cfg(feature = "native-tls")]
-#[compio_macros::test]
+#[compio::test]
 async fn native() {
     let connector = TlsConnector::from(native_tls::TlsConnector::new().unwrap());
 
@@ -26,7 +28,7 @@ async fn native() {
 }
 
 #[cfg(feature = "rustls")]
-#[compio_macros::test]
+#[compio::test]
 async fn rtls() {
     let mut store = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs().unwrap() {

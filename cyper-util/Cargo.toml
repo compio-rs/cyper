@@ -14,10 +14,8 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-compio-buf = { workspace = true }
+compio = { workspace = true }
 compio-io = { workspace = true, features = ["compat"] }
-compio-runtime = { workspace = true }
-compio-net = { workspace = true, features = ["runtime"] }
 cyper-tls = { workspace = true }
 
 native-tls = { workspace = true, optional = true }

@@ -4,7 +4,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
 };
 
-use compio_net::TcpListener;
+use compio::net::TcpListener;
 use cyper_util::{Acceptor, CompioExecutor};
 use futures_channel::oneshot;
 
@@ -52,7 +52,7 @@ where
         let _ = shutdown_rx.await;
     });
 
-    compio_runtime::spawn(srv).detach();
+    compio::runtime::spawn(srv).detach();
 
     Server {
         addr,
