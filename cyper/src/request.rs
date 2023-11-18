@@ -209,10 +209,10 @@ impl RequestBuilder {
     /// Enable HTTP basic authentication.
     ///
     /// ```rust
-    /// # use cyper_client::Error;
+    /// # use cyper::Error;
     ///
     /// # async fn run() -> Result<(), Error> {
-    /// let client = cyper_client::Client::new();
+    /// let client = cyper::Client::new();
     /// let resp = client
     ///     .delete("http://httpbin.org/delete")
     ///     .basic_auth("admin", Some("good password"))
@@ -311,14 +311,14 @@ impl RequestBuilder {
     /// header.
     ///
     /// ```rust
-    /// # use cyper_client::Error;
+    /// # use cyper::Error;
     /// # use std::collections::HashMap;
     /// #
     /// # async fn run() -> Result<(), Error> {
     /// let mut params = HashMap::new();
     /// params.insert("lang", "rust");
     ///
-    /// let client = cyper_client::Client::new();
+    /// let client = cyper::Client::new();
     /// let res = client
     ///     .post("http://httpbin.org")
     ///     .form(&params)

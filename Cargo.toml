@@ -1,5 +1,5 @@
 [workspace]
-members = ["cyper-tls", "cyper-util", "cyper-client"]
+members = ["cyper-tls", "cyper-util", "cyper"]
 resolver = "2"
 
 [workspace.package]

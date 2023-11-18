@@ -13,13 +13,13 @@ Add `compio` and `cyper` as dependency:
 
 ```
 compio = { version = "0.9.0.beta.1", features = ["macros"] }
-cyper-client = "0.1.0-beta.1"
+cyper = "0.1.0-beta.1"
 ```
 
 Then we can start a simple HTTP request:
 
 ```rust
-use cyper_client::Client;
+use cyper::Client;
 
 #[compio::main]
 async fn main() {

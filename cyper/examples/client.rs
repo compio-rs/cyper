@@ -1,4 +1,4 @@
-use cyper_client::Client;
+use cyper::Client;
 
 #[compio::main]
 async fn main() {
