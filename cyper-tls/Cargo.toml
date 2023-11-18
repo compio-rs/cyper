@@ -21,6 +21,7 @@ native-tls = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 
 [dev-dependencies]
+compio-driver = { workspace = true }
 compio-net = { workspace = true }
 compio-runtime = { workspace = true }
 compio-macros = { workspace = true }

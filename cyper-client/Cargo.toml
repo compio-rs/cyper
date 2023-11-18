@@ -32,6 +32,7 @@ thiserror = "1"
 url = "2"
 
 [dev-dependencies]
+compio-driver = { workspace = true }
 compio-net = { workspace = true, features = ["runtime"] }
 compio-macros = { workspace = true }
 cyper-util = { workspace = true, features = ["server"] }
