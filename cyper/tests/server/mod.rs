@@ -38,9 +38,10 @@ where
     let listener = TcpListener::bind(&(Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
     let srv = async move {
+        let builder = hyper_util::server::conn::auto::Builder::new(CompioExecutor);
         while let Ok(None) = shutdown_rx.try_recv() {
             let (stream, _) = listener.accept().await.unwrap();
-            hyper_util::server::conn::auto::Builder::new(CompioExecutor)
+            builder
                 .serve_connection(
                     HyperStream::new(stream),
                     hyper::service::service_fn({
