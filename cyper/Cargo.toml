@@ -15,8 +15,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-compio-buf = { workspace = true, features = ["bytes"] }
-compio = { workspace = true, features = ["time", "tls"] }
+compio = { workspace = true, features = ["time", "tls", "bytes"] }
 cyper-core = { workspace = true, features = ["client"] }
 
 http = "0.2"

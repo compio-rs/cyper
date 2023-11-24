@@ -6,8 +6,10 @@ use std::{
     task::{ready, Context, Poll},
 };
 
-use compio::net::{TcpListener, TcpStream};
-use compio_tls::TlsStream;
+use compio::{
+    net::{TcpListener, TcpStream},
+    tls::TlsStream,
+};
 use hyper::server::accept::Accept;
 
 use crate::HttpStream;
@@ -72,14 +74,17 @@ impl Accept for Acceptor {
 /// A TLS acceptor.
 pub struct TlsAcceptor {
     tcp_acceptor: Acceptor,
-    tls_acceptor: compio_tls::TlsAcceptor,
+    tls_acceptor: compio::tls::TlsAcceptor,
     fut: Option<LocalPinBoxFuture<io::Result<TlsStream<TcpStream>>>>,
 }
 
 impl TlsAcceptor {
     /// Create [`TlsAcceptor`] from an existing [`compio::net::TcpListener`] and
     /// [`compio_tls::TlsAcceptor`].
-    pub fn from_listener(tcp_listener: TcpListener, tls_acceptor: compio_tls::TlsAcceptor) -> Self {
+    pub fn from_listener(
+        tcp_listener: TcpListener,
+        tls_acceptor: compio::tls::TlsAcceptor,
+    ) -> Self {
         Self {
             tcp_acceptor: Acceptor::from_listener(tcp_listener),
             tls_acceptor,
@@ -96,7 +101,7 @@ impl Accept for TlsAcceptor {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
-        let acceptor: &'static compio_tls::TlsAcceptor =
+        let acceptor: &'static compio::tls::TlsAcceptor =
             unsafe { &*(&self.tls_acceptor as *const _) };
         if let Some(mut fut) = self.fut.take() {
             match fut.as_mut().poll(cx) {

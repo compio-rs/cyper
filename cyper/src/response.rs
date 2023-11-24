@@ -1,4 +1,4 @@
-use compio_buf::bytes::Bytes;
+use compio::bytes::Bytes;
 use encoding_rs::{Encoding, UTF_8};
 use http::{header::CONTENT_TYPE, HeaderMap, StatusCode, Version};
 use hyper::Body;
