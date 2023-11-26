@@ -15,9 +15,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-compio = { workspace = true }
-compio-io = { workspace = true, features = ["compat"] }
-compio-tls = { workspace = true }
+compio = { workspace = true, features = ["io-compat", "tls"] }
 
 native-tls = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
@@ -30,8 +28,8 @@ tokio = { workspace = true }
 
 [features]
 default = ["native-tls"]
-native-tls = ["compio-tls/native-tls", "dep:native-tls"]
-rustls = ["compio-tls/rustls", "dep:rustls", "dep:rustls-native-certs"]
+native-tls = ["compio/native-tls", "dep:native-tls"]
+rustls = ["compio/rustls", "dep:rustls", "dep:rustls-native-certs"]
 vendored = ["native-tls?/vendored"]
 
 client = ["hyper/client"]
@@ -39,5 +37,5 @@ server = ["hyper/server"]
 
 all = ["native-tls", "rustls", "client", "server"]
 
-read_buf = ["compio-tls/read_buf"]
-nightly = ["read_buf"]
+read_buf = ["compio/read_buf"]
+nightly = ["read_buf", "compio/nightly"]
