@@ -259,6 +259,10 @@ impl<S: AsyncRead + Unpin + 'static> hyper::rt::Read for HyperStream<S> {
         cx: &mut Context<'_>,
         buf: hyper::rt::ReadBufCursor<'_>,
     ) -> Poll<io::Result<()>> {
+        // Safety:
+        // - The futures won't live longer than the stream.
+        // - `self` is pinned.
+        // - The inner stream won't be moved.
         let inner: &'static mut SyncStream<S> = unsafe { &mut *(self.inner.deref_mut() as *mut _) };
 
         poll_future_would_block!(
