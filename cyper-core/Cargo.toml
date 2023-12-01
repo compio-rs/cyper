@@ -25,6 +25,7 @@ rustls-pki-types = "=0.2.2"
 cfg-if = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true, optional = true }
+pin-project = "1.1.3"
 send_wrapper = { workspace = true, features = ["futures"] }
 tower-service = { version = "0.3.2", optional = true }
 

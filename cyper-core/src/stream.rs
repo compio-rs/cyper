@@ -1,6 +1,7 @@
 use std::{
     future::Future,
     io,
+    marker::PhantomPinned,
     ops::DerefMut,
     pin::Pin,
     task::{Context, Poll},
@@ -15,6 +16,7 @@ use compio::{
 use hyper::Uri;
 #[cfg(feature = "client")]
 use hyper_util::client::legacy::connect::{Connected, Connection};
+use pin_project::pin_project;
 use send_wrapper::SendWrapper;
 
 use crate::TlsBackend;
@@ -169,11 +171,15 @@ impl Connection for HttpStream {
 type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
 /// A stream wrapper for hyper.
+#[pin_project]
 pub struct HyperStream<S> {
+    #[pin]
     inner: SendWrapper<SyncStream<S>>,
     read_future: Option<PinBoxFuture<io::Result<usize>>>,
     write_future: Option<PinBoxFuture<io::Result<usize>>>,
     shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
+    // This struct could not be Unpin because the futures keeps the pointer to the stream
+    _p: PhantomPinned,
 }
 
 impl<S> HyperStream<S> {
@@ -184,6 +190,7 @@ impl<S> HyperStream<S> {
             read_future: None,
             write_future: None,
             shutdown_future: None,
+            _p: PhantomPinned,
         }
     }
 }
@@ -197,7 +204,7 @@ macro_rules! poll_future {
         let f = future.as_mut();
         match f.poll($cx) {
             Poll::Pending => {
-                $f = Some(future);
+                $f.replace(future);
                 return Poll::Pending;
             }
             Poll::Ready(res) => res,
@@ -209,7 +216,7 @@ macro_rules! poll_future_would_block {
     ($f:expr, $cx:expr, $e:expr, $io:expr) => {{
         if let Some(mut f) = $f.take() {
             if f.as_mut().poll($cx).is_pending() {
-                $f = Some(f);
+                $f.replace(f);
                 return Poll::Pending;
             }
         }
@@ -217,7 +224,7 @@ macro_rules! poll_future_would_block {
         match $io {
             Ok(len) => Poll::Ready(Ok(len)),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                $f = Some(Box::pin(SendWrapper::new($e)));
+                $f.replace(Box::pin(SendWrapper::new($e)));
                 $cx.waker().wake_by_ref();
                 Poll::Pending
             }
@@ -255,18 +262,20 @@ fn read_buf(reader: &mut impl io::Read, mut buf: hyper::rt::ReadBufCursor<'_>) -
 
 impl<S: AsyncRead + Unpin + 'static> hyper::rt::Read for HyperStream<S> {
     fn poll_read(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: hyper::rt::ReadBufCursor<'_>,
     ) -> Poll<io::Result<()>> {
+        let mut this = self.project();
         // Safety:
         // - The futures won't live longer than the stream.
         // - `self` is pinned.
         // - The inner stream won't be moved.
-        let inner: &'static mut SyncStream<S> = unsafe { &mut *(self.inner.deref_mut() as *mut _) };
+        let inner: &'static mut SyncStream<S> =
+            unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
 
         poll_future_would_block!(
-            self.read_future,
+            this.read_future,
             cx,
             inner.fill_read_buf(),
             read_buf(inner, buf)
@@ -276,29 +285,35 @@ impl<S: AsyncRead + Unpin + 'static> hyper::rt::Read for HyperStream<S> {
 
 impl<S: AsyncWrite + Unpin + 'static> hyper::rt::Write for HyperStream<S> {
     fn poll_write(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let inner: &'static mut SyncStream<S> = unsafe { &mut *(self.inner.deref_mut() as *mut _) };
+        let mut this = self.project();
+        let inner: &'static mut SyncStream<S> =
+            unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
 
         poll_future_would_block!(
-            self.write_future,
+            this.write_future,
             cx,
             inner.flush_write_buf(),
             io::Write::write(inner, buf)
         )
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let inner: &'static mut SyncStream<S> = unsafe { &mut *(self.inner.deref_mut() as *mut _) };
-        let res = poll_future!(self.write_future, cx, inner.flush_write_buf());
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let mut this = self.project();
+        let inner: &'static mut SyncStream<S> =
+            unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
+        let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
         Poll::Ready(res.map(|_| ()))
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let inner: &'static mut SyncStream<S> = unsafe { &mut *(self.inner.deref_mut() as *mut _) };
-        let res = poll_future!(self.shutdown_future, cx, inner.get_mut().shutdown());
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let mut this = self.project();
+        let inner: &'static mut SyncStream<S> =
+            unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
+        let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
         Poll::Ready(res)
     }
 }
