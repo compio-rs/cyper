@@ -20,7 +20,6 @@ compio = { workspace = true, features = ["io-compat", "tls"] }
 native-tls = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
-rustls-pki-types = "=0.2.2"
 
 cfg-if = { workspace = true }
 hyper = { workspace = true }
