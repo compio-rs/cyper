@@ -44,7 +44,6 @@ impl TlsBackend {
 
                 Ok(TlsConnector::from(std::sync::Arc::new(
                     rustls::ClientConfig::builder()
-                        .with_safe_defaults()
                         .with_root_certificates(store)
                         .with_no_client_auth(),
                 )))

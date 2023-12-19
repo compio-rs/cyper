@@ -2,7 +2,7 @@ use std::{fmt::Display, time::Duration};
 
 use hyper::{
     header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
-    Body, HeaderMap, Method, Version,
+    HeaderMap, Method, Version,
 };
 use serde::Serialize;
 use url::Url;
@@ -15,7 +15,7 @@ pub struct Request {
     method: Method,
     url: Url,
     headers: HeaderMap,
-    body: Option<Body>,
+    body: String,
     timeout: Option<Duration>,
     version: Version,
 }
@@ -28,7 +28,7 @@ impl Request {
             method,
             url,
             headers: HeaderMap::new(),
-            body: None,
+            body: String::new(),
             timeout: None,
             version: Version::default(),
         }
@@ -72,13 +72,13 @@ impl Request {
 
     /// Get the body.
     #[inline]
-    pub fn body(&self) -> Option<&Body> {
-        self.body.as_ref()
+    pub fn body(&self) -> &str {
+        &self.body
     }
 
     /// Get a mutable reference to the body.
     #[inline]
-    pub fn body_mut(&mut self) -> &mut Option<Body> {
+    pub fn body_mut(&mut self) -> &mut String {
         &mut self.body
     }
 
@@ -106,16 +106,7 @@ impl Request {
         &mut self.version
     }
 
-    pub(super) fn pieces(
-        self,
-    ) -> (
-        Method,
-        Url,
-        HeaderMap,
-        Option<Body>,
-        Option<Duration>,
-        Version,
-    ) {
+    pub(super) fn pieces(self) -> (Method, Url, HeaderMap, String, Option<Duration>, Version) {
         (
             self.method,
             self.url,
@@ -237,9 +228,9 @@ impl RequestBuilder {
     }
 
     /// Set the request body.
-    pub fn body<T: Into<Body>>(mut self, body: T) -> RequestBuilder {
+    pub fn body<T: Into<String>>(mut self, body: T) -> RequestBuilder {
         if let Ok(ref mut req) = self.request {
-            *req.body_mut() = Some(body.into());
+            *req.body_mut() = body.into();
         }
         self
     }
@@ -341,7 +332,7 @@ impl RequestBuilder {
                         CONTENT_TYPE,
                         HeaderValue::from_static("application/x-www-form-urlencoded"),
                     );
-                    *req.body_mut() = Some(body.into());
+                    *req.body_mut() = body;
                 }
                 Err(err) => error = Some(err.into()),
             }
@@ -362,13 +353,13 @@ impl RequestBuilder {
     pub fn json<T: Serialize + ?Sized>(mut self, json: &T) -> RequestBuilder {
         let mut error = None;
         if let Ok(ref mut req) = self.request {
-            match serde_json::to_vec(json) {
+            match serde_json::to_string(json) {
                 Ok(body) => {
                     if !req.headers().contains_key(CONTENT_TYPE) {
                         req.headers_mut()
                             .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
                     }
-                    *req.body_mut() = Some(body.into());
+                    *req.body_mut() = body;
                 }
                 Err(err) => error = Some(err.into()),
             }

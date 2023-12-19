@@ -36,6 +36,9 @@ pub enum Error {
     /// Hyper error.
     #[error("`hyper` error: {0}")]
     Hyper(#[from] hyper::Error),
+    /// Hyper client error.
+    #[error("`hyper` client error: {0}")]
+    HyperClient(#[from] hyper_util::client::legacy::Error),
     /// URL parse error.
     #[error("url parse error: {0}")]
     UrlParse(#[from] url::ParseError),
