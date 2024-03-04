@@ -7,11 +7,12 @@ use std::{
     task::{Context, Poll},
 };
 
+#[cfg(any(feature = "native-tls", feature = "rustls"))]
+use compio::tls::TlsStream;
 use compio::{
     buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
     io::{compat::SyncStream, AsyncRead, AsyncWrite},
     net::TcpStream,
-    tls::TlsStream,
 };
 use hyper::Uri;
 #[cfg(feature = "client")]
@@ -24,6 +25,7 @@ use crate::TlsBackend;
 #[allow(clippy::large_enum_variant)]
 enum HttpStreamInner {
     Tcp(TcpStream),
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     Tls(TlsStream<TcpStream>),
 }
 
@@ -35,8 +37,11 @@ impl HttpStreamInner {
         match scheme {
             "http" => {
                 let stream = TcpStream::connect((host, port.unwrap_or(80))).await?;
+                // Ignore it.
+                let _tls = tls;
                 Ok(Self::Tcp(stream))
             }
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
             "https" => {
                 let stream = TcpStream::connect((host, port.unwrap_or(443))).await?;
                 let connector = tls.create_connector()?;
@@ -53,6 +58,7 @@ impl HttpStreamInner {
         Self::Tcp(s)
     }
 
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub fn from_tls(s: TlsStream<TcpStream>) -> Self {
         Self::Tls(s)
     }
@@ -62,6 +68,7 @@ impl AsyncRead for HttpStreamInner {
     async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
         match self {
             Self::Tcp(s) => s.read(buf).await,
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
             Self::Tls(s) => s.read(buf).await,
         }
     }
@@ -69,6 +76,7 @@ impl AsyncRead for HttpStreamInner {
     async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
         match self {
             Self::Tcp(s) => s.read_vectored(buf).await,
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
             Self::Tls(s) => s.read_vectored(buf).await,
         }
     }
@@ -78,6 +86,7 @@ impl AsyncWrite for HttpStreamInner {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         match self {
             Self::Tcp(s) => s.write(buf).await,
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
             Self::Tls(s) => s.write(buf).await,
         }
     }
@@ -85,6 +94,7 @@ impl AsyncWrite for HttpStreamInner {
     async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         match self {
             Self::Tcp(s) => s.write_vectored(buf).await,
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
             Self::Tls(s) => s.write_vectored(buf).await,
         }
     }
@@ -92,6 +102,7 @@ impl AsyncWrite for HttpStreamInner {
     async fn flush(&mut self) -> io::Result<()> {
         match self {
             Self::Tcp(s) => s.flush().await,
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
             Self::Tls(s) => s.flush().await,
         }
     }
@@ -99,6 +110,7 @@ impl AsyncWrite for HttpStreamInner {
     async fn shutdown(&mut self) -> io::Result<()> {
         match self {
             Self::Tcp(s) => s.shutdown().await,
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
             Self::Tls(s) => s.shutdown().await,
         }
     }
@@ -120,6 +132,7 @@ impl HttpStream {
     }
 
     /// Create [`HttpStream`] with connected TLS stream.
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub fn from_tls(s: TlsStream<TcpStream>) -> Self {
         Self::from_inner(HttpStreamInner::from_tls(s))
     }
@@ -312,7 +325,8 @@ impl<S: AsyncWrite + Unpin + 'static> hyper::rt::Write for HyperStream<S> {
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let mut this = self.project();
 
-        // Avoid shutdown on flush because the inner buffer might be passed to the driver.
+        // Avoid shutdown on flush because the inner buffer might be passed to the
+        // driver.
         if this.write_future.is_some() {
             return Poll::Pending;
         }

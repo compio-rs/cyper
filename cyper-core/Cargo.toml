@@ -15,7 +15,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-compio = { workspace = true, features = ["io-compat", "tls"] }
+compio = { workspace = true, features = ["io-compat"] }
 
 rustls-native-certs = { workspace = true, optional = true }
 

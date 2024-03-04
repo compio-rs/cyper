@@ -1,10 +1,11 @@
-use std::io;
-
-use compio::tls::TlsConnector;
+#[cfg(any(feature = "native-tls", feature = "rustls"))]
+use {compio::tls::TlsConnector, std::io};
 
 /// Represents TLS backend options
 #[derive(Debug, Clone)]
 pub enum TlsBackend {
+    /// Don't use TLS backend.
+    None,
     /// Use [`native_tls`] as TLS backend.
     #[cfg(feature = "native-tls")]
     NativeTls,
@@ -21,7 +22,7 @@ impl Default for TlsBackend {
             } else if #[cfg(feature = "rustls")] {
                 Self::default_rustls()
             } else {
-                compile_error!("You must choose at least one of these features: [\"native-tls\", \"rustls\"]")
+                Self::None
             }
         }
     }
@@ -43,8 +44,13 @@ impl TlsBackend {
         ))
     }
 
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub(crate) fn create_connector(&self) -> io::Result<TlsConnector> {
         match self {
+            Self::None => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "could not create TLS connector without TLS backend",
+            )),
             #[cfg(feature = "native-tls")]
             Self::NativeTls => Ok(TlsConnector::from(
                 compio::tls::native_tls::TlsConnector::new()
