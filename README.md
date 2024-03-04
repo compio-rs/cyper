@@ -3,7 +3,8 @@
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/compio-rs/cyper/blob/master/LICENSE)
 [![crates.io](https://img.shields.io/crates/v/cyper)](https://crates.io/crates/cyper)
 [![docs.rs](https://img.shields.io/badge/docs.rs-cyper-latest)](https://docs.rs/cyper)
-[![Azure DevOps builds](https://strawberry-vs.visualstudio.com/compio/_apis/build/status/compio-rs.cyper?branch=master)](https://strawberry-vs.visualstudio.com/compio/_build?definitionId=23)
+[![Check](https://github.com/compio-rs/cyper/actions/workflows/ci_check.yml/badge.svg)](https://github.com/compio-rs/cyper/actions/workflows/ci_check.yml)
+[![Test](https://github.com/compio-rs/cyper/actions/workflows/ci_test.yml/badge.svg)](https://github.com/compio-rs/cyper/actions/workflows/ci_test.yml)
 
 An HTTP library based on [compio](https://github.com/compio-rs/compio) and [hyper](https://github.com/hyperium/hyper).
 
