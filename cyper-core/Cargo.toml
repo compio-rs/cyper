@@ -1,7 +1,7 @@
 [package]
 name = "cyper-core"
-version = "0.1.0-beta.1"
-description = "Core adaptors and services for compio running on hyper."
+version = "0.1.0-beta.2"
+description = "Core adaptors and services for compio running on hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
 edition = { workspace = true }
