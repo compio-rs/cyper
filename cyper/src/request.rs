@@ -1,4 +1,4 @@
-use std::{fmt::Display, time::Duration};
+use std::fmt::Display;
 
 use hyper::{
     header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
@@ -16,7 +16,6 @@ pub struct Request {
     url: Url,
     headers: HeaderMap,
     body: String,
-    timeout: Option<Duration>,
     version: Version,
 }
 
@@ -29,7 +28,6 @@ impl Request {
             url,
             headers: HeaderMap::new(),
             body: String::new(),
-            timeout: None,
             version: Version::default(),
         }
     }
@@ -82,18 +80,6 @@ impl Request {
         &mut self.body
     }
 
-    /// Get the timeout.
-    #[inline]
-    pub fn timeout(&self) -> Option<&Duration> {
-        self.timeout.as_ref()
-    }
-
-    /// Get a mutable reference to the timeout.
-    #[inline]
-    pub fn timeout_mut(&mut self) -> &mut Option<Duration> {
-        &mut self.timeout
-    }
-
     /// Get the http version.
     #[inline]
     pub fn version(&self) -> Version {
@@ -106,15 +92,8 @@ impl Request {
         &mut self.version
     }
 
-    pub(super) fn pieces(self) -> (Method, Url, HeaderMap, String, Option<Duration>, Version) {
-        (
-            self.method,
-            self.url,
-            self.headers,
-            self.body,
-            self.timeout,
-            self.version,
-        )
+    pub(super) fn pieces(self) -> (Method, Url, HeaderMap, String, Version) {
+        (self.method, self.url, self.headers, self.body, self.version)
     }
 }
 
@@ -212,16 +191,6 @@ impl RequestBuilder {
         self
     }
 
-    /// Enables a request timeout.
-    ///
-    /// The timeout is applied from when the request starts connecting until the
-    /// response body has finished. It affects only this request and overrides
-    /// the timeout configured using `ClientBuilder::timeout()`.
-    pub fn timeout(mut self, timeout: Duration) -> RequestBuilder {
-        *self.request.timeout_mut() = Some(timeout);
-        self
-    }
-
     /// Modify the query string of the URL.
     ///
     /// Modifies the URL of this request, adding the parameters provided.
@@ -242,10 +211,11 @@ impl RequestBuilder {
     /// into a query string.
     pub fn query<T: Serialize + ?Sized>(mut self, query: &T) -> Result<RequestBuilder> {
         let url = self.request.url_mut();
-        let mut pairs = url.query_pairs_mut();
-        let serializer = serde_urlencoded::Serializer::new(&mut pairs);
-        query.serialize(serializer)?;
-        drop(pairs);
+        {
+            let mut pairs = url.query_pairs_mut();
+            let serializer = serde_urlencoded::Serializer::new(&mut pairs);
+            query.serialize(serializer)?;
+        }
         if let Some("") = url.query() {
             url.set_query(None);
         }

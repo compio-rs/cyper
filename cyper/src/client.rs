@@ -27,7 +27,7 @@ impl Client {
 
     /// Send a request and wait for a response.
     pub async fn execute(&self, request: Request) -> Result<Response> {
-        let (method, url, headers, body, timeout, version) = request.pieces();
+        let (method, url, headers, body, version) = request.pieces();
         let mut request = hyper::Request::builder()
             .method(method)
             .uri(
@@ -40,14 +40,7 @@ impl Client {
         *request.headers_mut() = self.client.headers.clone();
         crate::util::replace_headers(request.headers_mut(), headers);
 
-        let future = self.client.client.request(request);
-        let res = if let Some(timeout) = timeout {
-            compio::time::timeout(timeout, future)
-                .await
-                .map_err(|_| crate::Error::Timeout)??
-        } else {
-            future.await?
-        };
+        let res = self.client.client.request(request).await?;
         Ok(Response::new(res, url))
     }
 
