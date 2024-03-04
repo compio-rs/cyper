@@ -21,7 +21,7 @@ cyper-core = { workspace = true, features = ["client"] }
 http = "0.2"
 hyper = { workspace = true, features = ["client", "http1"] }
 
-base64 = "0.21"
+base64 = "0.22"
 encoding_rs = "0.8"
 mime = "0.3"
 serde = "1"
