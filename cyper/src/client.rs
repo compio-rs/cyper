@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cyper_core::{CompioExecutor, Connector, TlsBackend};
 use hyper::{HeaderMap, Method, Uri};
 
-use crate::{IntoUrl, Request, RequestBuilder, Response, Result};
+use crate::{Body, IntoUrl, Request, RequestBuilder, Response, Result};
 
 /// An asynchronous `Client` to make Requests with.
 #[derive(Debug, Clone)]
@@ -85,7 +85,7 @@ impl Client {
 
 #[derive(Debug)]
 struct ClientInner {
-    client: hyper_util::client::legacy::Client<Connector, String>,
+    client: hyper_util::client::legacy::Client<Connector, Body>,
     headers: HeaderMap,
 }
 

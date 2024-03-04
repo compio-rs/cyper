@@ -3,6 +3,9 @@
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
+mod body;
+pub use body::*;
+
 mod client;
 pub use client::*;
 

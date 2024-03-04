@@ -7,7 +7,7 @@ use hyper::{
 use serde::Serialize;
 use url::Url;
 
-use crate::{Client, Response, Result};
+use crate::{Body, Client, Response, Result};
 
 /// A request which can be executed with `Client::execute()`.
 #[derive(Debug)]
@@ -15,7 +15,7 @@ pub struct Request {
     method: Method,
     url: Url,
     headers: HeaderMap,
-    body: String,
+    body: Body,
     version: Version,
 }
 
@@ -27,7 +27,7 @@ impl Request {
             method,
             url,
             headers: HeaderMap::new(),
-            body: String::new(),
+            body: Body::empty(),
             version: Version::default(),
         }
     }
@@ -70,13 +70,13 @@ impl Request {
 
     /// Get the body.
     #[inline]
-    pub fn body(&self) -> &str {
+    pub fn body(&self) -> &[u8] {
         &self.body
     }
 
     /// Get a mutable reference to the body.
     #[inline]
-    pub fn body_mut(&mut self) -> &mut String {
+    pub fn body_mut(&mut self) -> &mut Body {
         &mut self.body
     }
 
@@ -92,7 +92,7 @@ impl Request {
         &mut self.version
     }
 
-    pub(super) fn pieces(self) -> (Method, Url, HeaderMap, String, Version) {
+    pub(super) fn pieces(self) -> (Method, Url, HeaderMap, Body, Version) {
         (self.method, self.url, self.headers, self.body, self.version)
     }
 }
@@ -186,7 +186,7 @@ impl RequestBuilder {
     }
 
     /// Set the request body.
-    pub fn body<T: Into<String>>(mut self, body: T) -> RequestBuilder {
+    pub fn body<T: Into<Body>>(mut self, body: T) -> RequestBuilder {
         *self.request.body_mut() = body.into();
         self
     }
