@@ -17,23 +17,22 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 compio = { workspace = true, features = ["io-compat", "tls"] }
 
-native-tls = { workspace = true, optional = true }
-rustls = { workspace = true, optional = true }
 rustls-native-certs = { workspace = true, optional = true }
 
 cfg-if = { workspace = true }
 hyper = { workspace = true }
+hyper-util = { workspace = true, optional = true }
+pin-project = "1.1.3"
 send_wrapper = { workspace = true, features = ["futures"] }
-tokio = { workspace = true }
+tower-service = { version = "0.3.2", optional = true }
 
 [features]
 default = ["native-tls"]
-native-tls = ["compio/native-tls", "dep:native-tls"]
-rustls = ["compio/rustls", "dep:rustls", "dep:rustls-native-certs"]
-vendored = ["native-tls?/vendored"]
+native-tls = ["compio/native-tls"]
+rustls = ["compio/rustls", "dep:rustls-native-certs"]
 
-client = ["hyper/client"]
-server = ["hyper/server"]
+client = ["hyper-util/client-legacy", "hyper-util/http1", "dep:tower-service"]
+server = ["hyper-util/server-auto"]
 
 all = ["native-tls", "rustls", "client", "server"]
 

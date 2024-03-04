@@ -1,7 +1,8 @@
 use compio::bytes::Bytes;
 use encoding_rs::{Encoding, UTF_8};
 use http::{header::CONTENT_TYPE, HeaderMap, StatusCode, Version};
-use hyper::Body;
+use http_body_util::BodyExt;
+use hyper::body::{Body, Incoming};
 use mime::Mime;
 use url::Url;
 
@@ -10,12 +11,12 @@ use crate::Result;
 /// A Response to a submitted `Request`.
 #[derive(Debug)]
 pub struct Response {
-    pub(super) res: hyper::Response<Body>,
+    pub(super) res: hyper::Response<Incoming>,
     url: Url,
 }
 
 impl Response {
-    pub(super) fn new(res: hyper::Response<hyper::Body>, url: Url) -> Response {
+    pub(super) fn new(res: hyper::Response<Incoming>, url: Url) -> Response {
         Response { res, url }
     }
 
@@ -51,9 +52,7 @@ impl Response {
     /// - The response is compressed and automatically decoded (thus changing
     ///   the actual decoded length).
     pub fn content_length(&self) -> Option<u64> {
-        use hyper::body::HttpBody;
-
-        HttpBody::size_hint(self.res.body()).exact()
+        self.res.body().size_hint().exact()
     }
 
     /// Get the final `Url` of this `Response`.
@@ -89,7 +88,7 @@ impl Response {
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = cyper::Client::new();
     /// let content = client
-    ///     .get("http://httpbin.org/range/26")
+    ///     .get("http://httpbin.org/range/26")?
     ///     .send()
     ///     .await?
     ///     .text()
@@ -122,7 +121,7 @@ impl Response {
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = cyper::Client::new();
     /// let content = client
-    ///     .get("http://httpbin.org/range/26")
+    ///     .get("http://httpbin.org/range/26")?
     ///     .send()
     ///     .await?
     ///     .text_with_charset("utf-8")
@@ -174,7 +173,7 @@ impl Response {
     /// # async fn run() -> Result<(), Error> {
     /// let client = cyper::Client::new();
     /// let ip = client
-    ///     .get("http://httpbin.org/ip")
+    ///     .get("http://httpbin.org/ip")?
     ///     .send()
     ///     .await?
     ///     .json::<Ip>()
@@ -209,7 +208,7 @@ impl Response {
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = cyper::Client::new();
     /// let bytes = client
-    ///     .get("http://httpbin.org/ip")
+    ///     .get("http://httpbin.org/ip")?
     ///     .send()
     ///     .await?
     ///     .bytes()
@@ -220,6 +219,6 @@ impl Response {
     /// # }
     /// ```
     pub async fn bytes(self) -> Result<Bytes> {
-        Ok(hyper::body::to_bytes(self.res.into_body()).await?)
+        Ok(self.res.into_body().collect().await?.to_bytes())
     }
 }

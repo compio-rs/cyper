@@ -4,16 +4,16 @@
 #![cfg_attr(feature = "read_buf", feature(read_buf, core_io_borrowed_buf))]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
-mod service;
-pub use service::*;
+mod executor;
+pub use executor::*;
+
+#[cfg(feature = "client")]
+mod connector;
+#[cfg(feature = "client")]
+pub use connector::*;
 
 mod backend;
 pub use backend::*;
-
-#[cfg(feature = "server")]
-mod server;
-#[cfg(feature = "server")]
-pub use server::*;
 
 mod stream;
 pub use stream::*;

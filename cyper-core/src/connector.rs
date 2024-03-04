@@ -5,21 +5,11 @@ use std::{
     task::{Context, Poll},
 };
 
-use hyper::{rt::Executor, service::Service, Uri};
+use hyper::Uri;
 use send_wrapper::SendWrapper;
+use tower_service::Service;
 
 use crate::{HttpStream, TlsBackend};
-
-/// An executor service based on [`compio::runtime`]. It uses
-/// [`compio::runtime::spawn`] interally.
-#[derive(Debug, Default, Clone)]
-pub struct CompioExecutor;
-
-impl<F: Future<Output = ()> + Send + 'static> Executor<F> for CompioExecutor {
-    fn execute(&self, fut: F) {
-        compio::runtime::spawn(fut).detach();
-    }
-}
 
 /// An HTTP connector service.
 ///
@@ -47,6 +37,6 @@ impl Service<Uri> for Connector {
     }
 
     fn call(&mut self, req: Uri) -> Self::Future {
-        Box::pin(SendWrapper::new(HttpStream::connect(req, self.tls)))
+        Box::pin(SendWrapper::new(HttpStream::connect(req, self.tls.clone())))
     }
 }

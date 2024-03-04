@@ -18,11 +18,13 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio = { workspace = true, features = ["time", "tls", "bytes"] }
 cyper-core = { workspace = true, features = ["client"] }
 
-http = "0.2"
+http = "1.0.0"
 hyper = { workspace = true, features = ["client", "http1"] }
+hyper-util = { workspace = true }
 
-base64 = "0.21"
+base64 = "0.22"
 encoding_rs = "0.8"
+http-body-util = "0.1.0"
 mime = "0.3"
 serde = "1"
 serde_json = { version = "1", optional = true }
@@ -33,6 +35,7 @@ url = "2"
 [dev-dependencies]
 compio = { workspace = true, features = ["macros"] }
 cyper-core = { workspace = true, features = ["server"] }
+rustls = { workspace = true, features = ["ring"] }
 
 futures-channel = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
@@ -42,7 +45,6 @@ serde = { version = "1", features = ["derive"] }
 default = ["native-tls"]
 native-tls = ["cyper-core/native-tls"]
 rustls = ["cyper-core/rustls"]
-vendored = ["cyper-core/vendored"]
 json = ["dep:serde_json"]
 all = ["json", "native-tls", "rustls", "cyper-core/all"]
 

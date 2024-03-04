@@ -1,14 +1,14 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use cyper_core::{CompioExecutor, Connector, TlsBackend};
-use hyper::{Body, HeaderMap, Method, Uri};
+use hyper::{HeaderMap, Method, Uri};
 
-use crate::{IntoUrl, Request, RequestBuilder, Response, Result};
+use crate::{Body, IntoUrl, Request, RequestBuilder, Response, Result};
 
 /// An asynchronous `Client` to make Requests with.
 #[derive(Debug, Clone)]
 pub struct Client {
-    client: Rc<ClientInner>,
+    client: Arc<ClientInner>,
 }
 
 impl Client {
@@ -27,7 +27,7 @@ impl Client {
 
     /// Send a request and wait for a response.
     pub async fn execute(&self, request: Request) -> Result<Response> {
-        let (method, url, headers, body, timeout, version) = request.pieces();
+        let (method, url, headers, body, version) = request.pieces();
         let mut request = hyper::Request::builder()
             .method(method)
             .uri(
@@ -36,63 +36,56 @@ impl Client {
                     .expect("a parsed Url should always be a valid Uri"),
             )
             .version(version)
-            .body(body.unwrap_or_else(Body::empty))?;
+            .body(body)?;
         *request.headers_mut() = self.client.headers.clone();
         crate::util::replace_headers(request.headers_mut(), headers);
 
-        let future = self.client.client.request(request);
-        let res = if let Some(timeout) = timeout {
-            compio::time::timeout(timeout, future)
-                .await
-                .map_err(|_| crate::Error::Timeout)??
-        } else {
-            future.await?
-        };
+        let res = self.client.client.request(request).await?;
         Ok(Response::new(res, url))
     }
 
     /// Send a request with method and url.
-    pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
-        RequestBuilder::new(
+    pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> Result<RequestBuilder> {
+        Ok(RequestBuilder::new(
             self.clone(),
-            url.into_url().map(|url| Request::new(method, url)),
-        )
+            Request::new(method, url.into_url()?),
+        ))
     }
 
     /// Convenience method to make a `GET` request to a URL.
-    pub fn get<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn get<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::GET, url)
     }
 
     /// Convenience method to make a `POST` request to a URL.
-    pub fn post<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn post<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::POST, url)
     }
 
     /// Convenience method to make a `PUT` request to a URL.
-    pub fn put<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn put<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::PUT, url)
     }
 
     /// Convenience method to make a `PATCH` request to a URL.
-    pub fn patch<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn patch<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::PATCH, url)
     }
 
     /// Convenience method to make a `DELETE` request to a URL.
-    pub fn delete<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn delete<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::DELETE, url)
     }
 
     /// Convenience method to make a `HEAD` request to a URL.
-    pub fn head<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn head<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::HEAD, url)
     }
 }
 
 #[derive(Debug)]
 struct ClientInner {
-    client: hyper::Client<Connector, Body>,
+    client: hyper_util::client::legacy::Client<Connector, Body>,
     headers: HeaderMap,
 }
 
@@ -122,8 +115,7 @@ impl ClientBuilder {
 
     /// Returns a `Client` that uses this `ClientBuilder` configuration.
     pub fn build(self) -> Client {
-        let client = hyper::Client::builder()
-            .executor(CompioExecutor)
+        let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
             .build(Connector::new(self.tls));
         let client_ref = ClientInner {
@@ -131,7 +123,7 @@ impl ClientBuilder {
             headers: self.headers,
         };
         Client {
-            client: Rc::new(client_ref),
+            client: Arc::new(client_ref),
         }
     }
 
@@ -152,8 +144,15 @@ impl ClientBuilder {
 
     /// Force using the Rustls TLS backend.
     #[cfg(feature = "rustls")]
-    pub fn use_rustls(mut self) -> Self {
-        self.tls = TlsBackend::Rustls;
+    pub fn use_rustls_default(mut self) -> Self {
+        self.tls = TlsBackend::default_rustls();
+        self
+    }
+
+    /// Force using the Rustls TLS backend.
+    #[cfg(feature = "rustls")]
+    pub fn use_rustls(mut self, config: std::sync::Arc<compio::tls::rustls::ClientConfig>) -> Self {
+        self.tls = TlsBackend::Rustls(config);
         self
     }
 }
