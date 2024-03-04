@@ -311,6 +311,12 @@ impl<S: AsyncWrite + Unpin + 'static> hyper::rt::Write for HyperStream<S> {
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let mut this = self.project();
+
+        // Avoid shutdown on flush because the inner buffer might be passed to the driver.
+        if this.write_future.is_some() {
+            return Poll::Pending;
+        }
+
         let inner: &'static mut SyncStream<S> =
             unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
         let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
