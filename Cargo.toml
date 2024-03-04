@@ -19,7 +19,7 @@ send_wrapper = "0.6"
 tokio = "1.33.0"
 
 native-tls = "0.2.11"
-rustls = "0.22.0-alpha.4"
+rustls = "0.23.1"
 rustls-native-certs = "0.7.0-alpha.1"
 
 hyper = "0.14"
