@@ -79,7 +79,7 @@ async fn test_native_tls() {
 #[cfg(feature = "rustls")]
 async fn test_rustls() {
     let resp = Client::builder()
-        .use_rustls()
+        .use_rustls_default()
         .build()
         .get("https://www.example.com")
         .send()
