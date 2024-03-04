@@ -122,20 +122,13 @@ impl Request {
 #[derive(Debug)]
 pub struct RequestBuilder {
     client: Client,
-    request: Result<Request>,
+    request: Request,
 }
 
 impl RequestBuilder {
-    pub(crate) fn new(client: Client, request: Result<Request>) -> RequestBuilder {
-        RequestBuilder { client, request }
-    }
-
     /// Assemble a builder starting from an existing `Client` and a `Request`.
-    pub fn from_parts(client: Client, request: Request) -> RequestBuilder {
-        RequestBuilder {
-            client,
-            request: Ok(request),
-        }
+    pub fn new(client: Client, request: Request) -> RequestBuilder {
+        RequestBuilder { client, request }
     }
 
     /// Add a `Header` to this Request.
@@ -143,7 +136,7 @@ impl RequestBuilder {
         self,
         key: K,
         value: V,
-    ) -> RequestBuilder
+    ) -> Result<RequestBuilder>
     where
         K::Error: Into<http::Error>,
         V::Error: Into<http::Error>,
@@ -158,42 +151,28 @@ impl RequestBuilder {
         key: K,
         value: V,
         sensitive: bool,
-    ) -> RequestBuilder
+    ) -> Result<RequestBuilder>
     where
         K::Error: Into<http::Error>,
         V::Error: Into<http::Error>,
     {
-        let mut error = None;
-        if let Ok(ref mut req) = self.request {
-            match key.try_into() {
-                Ok(key) => match value.try_into() {
-                    Ok(mut value) => {
-                        // We want to potentially make an unsensitive header
-                        // to be sensitive, not the reverse. So, don't turn off
-                        // a previously sensitive header.
-                        if sensitive {
-                            value.set_sensitive(true);
-                        }
-                        req.headers_mut().append(key, value);
-                    }
-                    Err(e) => error = Some(e.into()),
-                },
-                Err(e) => error = Some(e.into()),
-            };
+        let key: HeaderName = key.try_into().map_err(|e| crate::Error::Http(e.into()))?;
+        let mut value: HeaderValue = value.try_into().map_err(|e| crate::Error::Http(e.into()))?;
+        // We want to potentially make an unsensitive header
+        // to be sensitive, not the reverse. So, don't turn off
+        // a previously sensitive header.
+        if sensitive {
+            value.set_sensitive(true);
         }
-        if let Some(err) = error {
-            self.request = Err(err.into());
-        }
-        self
+        self.request.headers_mut().append(key, value);
+        Ok(self)
     }
 
     /// Add a set of Headers to the existing ones on this Request.
     ///
     /// The headers will be merged in to any already set.
     pub fn headers(mut self, headers: HeaderMap) -> RequestBuilder {
-        if let Ok(ref mut req) = self.request {
-            crate::util::replace_headers(req.headers_mut(), headers);
-        }
+        crate::util::replace_headers(self.request.headers_mut(), headers);
         self
     }
 
@@ -205,8 +184,8 @@ impl RequestBuilder {
     /// # async fn run() -> Result<(), Error> {
     /// let client = cyper::Client::new();
     /// let resp = client
-    ///     .delete("http://httpbin.org/delete")
-    ///     .basic_auth("admin", Some("good password"))
+    ///     .delete("http://httpbin.org/delete")?
+    ///     .basic_auth("admin", Some("good password"))?
     ///     .send()
     ///     .await?;
     /// # Ok(())
@@ -216,22 +195,20 @@ impl RequestBuilder {
         self,
         username: U,
         password: Option<P>,
-    ) -> RequestBuilder {
+    ) -> Result<RequestBuilder> {
         let header_value = crate::util::basic_auth(username, password);
         self.header_sensitive(AUTHORIZATION, header_value, true)
     }
 
     /// Enable HTTP bearer authentication.
-    pub fn bearer_auth<T: Display>(self, token: T) -> RequestBuilder {
+    pub fn bearer_auth<T: Display>(self, token: T) -> Result<RequestBuilder> {
         let header_value = format!("Bearer {}", token);
         self.header_sensitive(AUTHORIZATION, header_value, true)
     }
 
     /// Set the request body.
     pub fn body<T: Into<String>>(mut self, body: T) -> RequestBuilder {
-        if let Ok(ref mut req) = self.request {
-            *req.body_mut() = body.into();
-        }
+        *self.request.body_mut() = body.into();
         self
     }
 
@@ -241,9 +218,7 @@ impl RequestBuilder {
     /// response body has finished. It affects only this request and overrides
     /// the timeout configured using `ClientBuilder::timeout()`.
     pub fn timeout(mut self, timeout: Duration) -> RequestBuilder {
-        if let Ok(ref mut req) = self.request {
-            *req.timeout_mut() = Some(timeout);
-        }
+        *self.request.timeout_mut() = Some(timeout);
         self
     }
 
@@ -265,33 +240,21 @@ impl RequestBuilder {
     /// # Errors
     /// This method will fail if the object you provide cannot be serialized
     /// into a query string.
-    pub fn query<T: Serialize + ?Sized>(mut self, query: &T) -> RequestBuilder {
-        let mut error = None;
-        if let Ok(ref mut req) = self.request {
-            let url = req.url_mut();
-            let mut pairs = url.query_pairs_mut();
-            let serializer = serde_urlencoded::Serializer::new(&mut pairs);
-
-            if let Err(err) = query.serialize(serializer) {
-                error = Some(err.into());
-            }
+    pub fn query<T: Serialize + ?Sized>(mut self, query: &T) -> Result<RequestBuilder> {
+        let url = self.request.url_mut();
+        let mut pairs = url.query_pairs_mut();
+        let serializer = serde_urlencoded::Serializer::new(&mut pairs);
+        query.serialize(serializer)?;
+        drop(pairs);
+        if let Some("") = url.query() {
+            url.set_query(None);
         }
-        if let Ok(ref mut req) = self.request {
-            if let Some("") = req.url().query() {
-                req.url_mut().set_query(None);
-            }
-        }
-        if let Some(err) = error {
-            self.request = Err(err);
-        }
-        self
+        Ok(self)
     }
 
     /// Set HTTP version
     pub fn version(mut self, version: Version) -> RequestBuilder {
-        if let Ok(ref mut req) = self.request {
-            req.version = version;
-        }
+        self.request.version = version;
         self
     }
 
@@ -311,8 +274,8 @@ impl RequestBuilder {
     ///
     /// let client = cyper::Client::new();
     /// let res = client
-    ///     .post("http://httpbin.org")
-    ///     .form(&params)
+    ///     .post("http://httpbin.org")?
+    ///     .form(&params)?
     ///     .send()
     ///     .await?;
     /// # Ok(())
@@ -323,24 +286,13 @@ impl RequestBuilder {
     ///
     /// This method fails if the passed value cannot be serialized into
     /// url encoded format
-    pub fn form<T: Serialize + ?Sized>(mut self, form: &T) -> RequestBuilder {
-        let mut error = None;
-        if let Ok(ref mut req) = self.request {
-            match serde_urlencoded::to_string(form) {
-                Ok(body) => {
-                    req.headers_mut().insert(
-                        CONTENT_TYPE,
-                        HeaderValue::from_static("application/x-www-form-urlencoded"),
-                    );
-                    *req.body_mut() = body;
-                }
-                Err(err) => error = Some(err.into()),
-            }
-        }
-        if let Some(err) = error {
-            self.request = Err(err);
-        }
-        self
+    pub fn form<T: Serialize + ?Sized>(mut self, form: &T) -> Result<RequestBuilder> {
+        let body = serde_urlencoded::to_string(form)?;
+        self.request.headers_mut().insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/x-www-form-urlencoded"),
+        );
+        Ok(self.body(body))
     }
 
     /// Send a JSON body.
@@ -350,29 +302,19 @@ impl RequestBuilder {
     /// Serialization can fail if `T`'s implementation of `Serialize` decides to
     /// fail, or if `T` contains a map with non-string keys.
     #[cfg(feature = "json")]
-    pub fn json<T: Serialize + ?Sized>(mut self, json: &T) -> RequestBuilder {
-        let mut error = None;
-        if let Ok(ref mut req) = self.request {
-            match serde_json::to_string(json) {
-                Ok(body) => {
-                    if !req.headers().contains_key(CONTENT_TYPE) {
-                        req.headers_mut()
-                            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-                    }
-                    *req.body_mut() = body;
-                }
-                Err(err) => error = Some(err.into()),
-            }
+    pub fn json<T: Serialize + ?Sized>(mut self, json: &T) -> Result<RequestBuilder> {
+        let body = serde_json::to_string(json)?;
+        if !self.request.headers().contains_key(CONTENT_TYPE) {
+            self.request
+                .headers_mut()
+                .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         }
-        if let Some(err) = error {
-            self.request = Err(err);
-        }
-        self
+        Ok(self.body(body))
     }
 
     /// Build a `Request`, which can be inspected, modified and executed with
     /// `Client::execute()`.
-    pub fn build(self) -> Result<Request> {
+    pub fn build(self) -> Request {
         self.request
     }
 
@@ -381,13 +323,13 @@ impl RequestBuilder {
     ///
     /// This is similar to [`RequestBuilder::build()`], but also returns the
     /// embedded `Client`.
-    pub fn build_split(self) -> (Client, Result<Request>) {
+    pub fn build_split(self) -> (Client, Request) {
         (self.client, self.request)
     }
 
     /// Constructs the Request and sends it to the target URL, returning a
     /// future Response.
     pub async fn send(self) -> Result<Response> {
-        self.client.execute(self.request?).await
+        self.client.execute(self.request).await
     }
 }

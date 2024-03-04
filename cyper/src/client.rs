@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use cyper_core::{CompioExecutor, Connector, TlsBackend};
 use hyper::{HeaderMap, Method, Uri};
@@ -8,7 +8,7 @@ use crate::{IntoUrl, Request, RequestBuilder, Response, Result};
 /// An asynchronous `Client` to make Requests with.
 #[derive(Debug, Clone)]
 pub struct Client {
-    client: Rc<ClientInner>,
+    client: Arc<ClientInner>,
 }
 
 impl Client {
@@ -52,40 +52,40 @@ impl Client {
     }
 
     /// Send a request with method and url.
-    pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
-        RequestBuilder::new(
+    pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> Result<RequestBuilder> {
+        Ok(RequestBuilder::new(
             self.clone(),
-            url.into_url().map(|url| Request::new(method, url)),
-        )
+            Request::new(method, url.into_url()?),
+        ))
     }
 
     /// Convenience method to make a `GET` request to a URL.
-    pub fn get<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn get<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::GET, url)
     }
 
     /// Convenience method to make a `POST` request to a URL.
-    pub fn post<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn post<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::POST, url)
     }
 
     /// Convenience method to make a `PUT` request to a URL.
-    pub fn put<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn put<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::PUT, url)
     }
 
     /// Convenience method to make a `PATCH` request to a URL.
-    pub fn patch<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn patch<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::PATCH, url)
     }
 
     /// Convenience method to make a `DELETE` request to a URL.
-    pub fn delete<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn delete<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::DELETE, url)
     }
 
     /// Convenience method to make a `HEAD` request to a URL.
-    pub fn head<U: IntoUrl>(&self, url: U) -> RequestBuilder {
+    pub fn head<U: IntoUrl>(&self, url: U) -> Result<RequestBuilder> {
         self.request(Method::HEAD, url)
     }
 }
@@ -130,7 +130,7 @@ impl ClientBuilder {
             headers: self.headers,
         };
         Client {
-            client: Rc::new(client_ref),
+            client: Arc::new(client_ref),
         }
     }
 

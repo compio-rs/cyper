@@ -88,7 +88,7 @@ impl Response {
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = cyper::Client::new();
     /// let content = client
-    ///     .get("http://httpbin.org/range/26")
+    ///     .get("http://httpbin.org/range/26")?
     ///     .send()
     ///     .await?
     ///     .text()
@@ -121,7 +121,7 @@ impl Response {
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = cyper::Client::new();
     /// let content = client
-    ///     .get("http://httpbin.org/range/26")
+    ///     .get("http://httpbin.org/range/26")?
     ///     .send()
     ///     .await?
     ///     .text_with_charset("utf-8")
@@ -173,7 +173,7 @@ impl Response {
     /// # async fn run() -> Result<(), Error> {
     /// let client = cyper::Client::new();
     /// let ip = client
-    ///     .get("http://httpbin.org/ip")
+    ///     .get("http://httpbin.org/ip")?
     ///     .send()
     ///     .await?
     ///     .json::<Ip>()
@@ -208,7 +208,7 @@ impl Response {
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = cyper::Client::new();
     /// let bytes = client
-    ///     .get("http://httpbin.org/ip")
+    ///     .get("http://httpbin.org/ip")?
     ///     .send()
     ///     .await?
     ///     .bytes()

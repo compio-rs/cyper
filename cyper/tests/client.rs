@@ -15,6 +15,7 @@ async fn response_text() {
 
     let res = client
         .get(&format!("http://{}/text", server.addr()))
+        .expect("cannot create request builder")
         .send()
         .await
         .expect("Failed to get");
@@ -31,6 +32,7 @@ async fn response_bytes() {
 
     let res = client
         .get(&format!("http://{}/bytes", server.addr()))
+        .expect("cannot create request builder")
         .send()
         .await
         .expect("Failed to get");
@@ -48,6 +50,7 @@ async fn response_json() {
 
     let res = client
         .get(&format!("http://{}/json", server.addr()))
+        .expect("cannot create request builder")
         .send()
         .await
         .expect("Failed to get");
@@ -57,7 +60,11 @@ async fn response_json() {
 
 #[compio::test]
 async fn test_allowed_methods() {
-    let resp = Client::new().get("https://www.example.com").send().await;
+    let resp = Client::new()
+        .get("https://www.example.com")
+        .unwrap()
+        .send()
+        .await;
 
     assert!(resp.is_ok());
 }
@@ -69,6 +76,7 @@ async fn test_native_tls() {
         .use_native_tls()
         .build()
         .get("https://www.example.com")
+        .unwrap()
         .send()
         .await
         .unwrap();
@@ -82,6 +90,7 @@ async fn test_rustls() {
         .use_rustls_default()
         .build()
         .get("https://www.example.com")
+        .unwrap()
         .send()
         .await
         .unwrap();
@@ -96,10 +105,12 @@ fn add_json_default_content_type_if_not_set_manually() {
     let content_type = http::HeaderValue::from_static("application/vnd.api+json");
     let req = Client::new()
         .post("https://www.example.com/")
+        .expect("cannot create request builder")
         .header(CONTENT_TYPE, &content_type)
+        .unwrap()
         .json(&map)
-        .build()
-        .expect("request is not valid");
+        .unwrap()
+        .build();
 
     assert_eq!(content_type, req.headers().get(CONTENT_TYPE).unwrap());
 }
@@ -111,9 +122,10 @@ fn update_json_content_type_if_set_manually() {
     map.insert("body", "json");
     let req = Client::new()
         .post("https://www.example.com/")
+        .expect("cannot create request builder")
         .json(&map)
-        .build()
-        .expect("request is not valid");
+        .unwrap()
+        .build();
 
     assert_eq!("application/json", req.headers().get(CONTENT_TYPE).unwrap());
 }
