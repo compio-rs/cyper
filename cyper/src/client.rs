@@ -1,7 +1,12 @@
 use std::sync::Arc;
 
 use cyper_core::{CompioExecutor, Connector, TlsBackend};
+use http::header::Entry;
 use hyper::{HeaderMap, Method, Uri};
+#[cfg(feature = "cookies")]
+use {
+    compio::bytes::Bytes, cookie_store::CookieStore, http::HeaderValue, std::sync::RwLock, url::Url,
+};
 
 use crate::{Body, IntoUrl, Request, RequestBuilder, Response, Result};
 
@@ -27,7 +32,23 @@ impl Client {
 
     /// Send a request and wait for a response.
     pub async fn execute(&self, request: Request) -> Result<Response> {
-        let (method, url, headers, body, version) = request.pieces();
+        let (method, url, mut headers, body, version) = request.pieces();
+
+        for (key, value) in &self.client.headers {
+            if let Entry::Vacant(entry) = headers.entry(key) {
+                entry.insert(value.clone());
+            }
+        }
+
+        #[cfg(feature = "cookies")]
+        {
+            if headers.get(http::header::COOKIE).is_none() {
+                if let Some(cookie_store) = self.cookie_value(&url) {
+                    headers.insert(http::header::COOKIE, cookie_store);
+                }
+            }
+        }
+
         let mut request = hyper::Request::builder()
             .method(method)
             .uri(
@@ -37,11 +58,46 @@ impl Client {
             )
             .version(version)
             .body(body)?;
-        *request.headers_mut() = self.client.headers.clone();
-        crate::util::replace_headers(request.headers_mut(), headers);
+        *request.headers_mut() = headers;
 
         let res = self.client.client.request(request).await?;
+
+        #[cfg(feature = "cookies")]
+        {
+            if let Some(cookie_store) = &self.client.cookies {
+                let mut values = res
+                    .headers()
+                    .get_all(http::header::SET_COOKIE)
+                    .into_iter()
+                    .peekable();
+                if values.peek().is_some() {
+                    let mut cookie_store = cookie_store.write().unwrap();
+                    cookie_store.store_response_cookies(
+                        values.filter_map(|val| {
+                            std::str::from_utf8(val.as_bytes()).ok()?.parse().ok()
+                        }),
+                        &url,
+                    );
+                }
+            }
+        }
+
         Ok(Response::new(res, url))
+    }
+
+    #[cfg(feature = "cookies")]
+    fn cookie_value(&self, url: &Url) -> Option<HeaderValue> {
+        let cookie_store = self.client.cookies.as_ref()?.read().unwrap();
+        let value = cookie_store
+            .get_request_values(url)
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        if !value.is_empty() {
+            Some(HeaderValue::from_maybe_shared(Bytes::from(value)).ok()?)
+        } else {
+            None
+        }
     }
 
     /// Send a request with method and url.
@@ -87,6 +143,8 @@ impl Client {
 struct ClientInner {
     client: hyper_util::client::legacy::Client<Connector, Body>,
     headers: HeaderMap,
+    #[cfg(feature = "cookies")]
+    cookies: Option<RwLock<CookieStore>>,
 }
 
 /// A `ClientBuilder` can be used to create a `Client` with custom
@@ -94,8 +152,10 @@ struct ClientInner {
 #[derive(Debug)]
 #[must_use]
 pub struct ClientBuilder {
-    headers: HeaderMap,
     tls: TlsBackend,
+    headers: HeaderMap,
+    #[cfg(feature = "cookies")]
+    cookies: Option<RwLock<CookieStore>>,
 }
 
 impl Default for ClientBuilder {
@@ -110,6 +170,8 @@ impl ClientBuilder {
         Self {
             headers: HeaderMap::new(),
             tls: TlsBackend::default(),
+            #[cfg(feature = "cookies")]
+            cookies: None,
         }
     }
 
@@ -121,6 +183,8 @@ impl ClientBuilder {
         let client_ref = ClientInner {
             client,
             headers: self.headers,
+            #[cfg(feature = "cookies")]
+            cookies: self.cookies,
         };
         Client {
             client: Arc::new(client_ref),
@@ -153,6 +217,22 @@ impl ClientBuilder {
     #[cfg(feature = "rustls")]
     pub fn use_rustls(mut self, config: std::sync::Arc<compio::tls::rustls::ClientConfig>) -> Self {
         self.tls = TlsBackend::Rustls(config);
+        self
+    }
+
+    /// Enable a persistent cookie store for the client.
+    ///
+    /// Cookies received in responses will be preserved and included in
+    /// additional requests.
+    ///
+    /// By default, no cookie store is used.
+    #[cfg(feature = "cookies")]
+    pub fn cookie_store(mut self, enable: bool) -> Self {
+        if enable {
+            self.cookies = Some(RwLock::new(CookieStore::default()))
+        } else {
+            self.cookies = None;
+        }
         self
     }
 }

@@ -23,6 +23,7 @@ hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true }
 
 base64 = "0.22"
+cookie_store = { version = "0.21", optional = true }
 encoding_rs = "0.8"
 http-body-util = "0.1.0"
 mime = "0.3"
@@ -37,16 +38,23 @@ compio = { workspace = true, features = ["macros"] }
 cyper-core = { workspace = true, features = ["server"] }
 rustls = { workspace = true, features = ["ring"] }
 
+cookie = "0.18"
 futures-channel = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
 serde = { version = "1", features = ["derive"] }
+time = "0.3"
 
 [features]
 default = ["native-tls"]
 native-tls = ["cyper-core/native-tls"]
 rustls = ["cyper-core/rustls"]
+cookies = ["dep:cookie_store"]
 json = ["dep:serde_json"]
-all = ["json", "native-tls", "rustls", "cyper-core/all"]
+all = ["cookies", "json", "native-tls", "rustls"]
 
 read_buf = ["cyper-core/read_buf"]
 nightly = ["read_buf", "cyper-core/nightly"]
+
+[[test]]
+name = "cookie"
+required-features = ["cookies"]

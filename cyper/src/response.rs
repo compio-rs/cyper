@@ -1,4 +1,6 @@
 use compio::bytes::Bytes;
+#[cfg(feature = "cookies")]
+use cookie_store::RawCookie;
 use encoding_rs::{Encoding, UTF_8};
 use http::{header::CONTENT_TYPE, HeaderMap, StatusCode, Version};
 use http_body_util::BodyExt;
@@ -198,6 +200,18 @@ impl Response {
         let full = self.bytes().await?;
 
         Ok(serde_json::from_slice(&full)?)
+    }
+
+    /// Retrieve the cookies contained in the response.
+    ///
+    /// Note that invalid 'Set-Cookie' headers will be ignored.
+    #[cfg(feature = "cookies")]
+    pub fn cookies(&self) -> impl Iterator<Item = RawCookie> {
+        self.res
+            .headers()
+            .get_all(http::header::SET_COOKIE)
+            .into_iter()
+            .filter_map(|val| std::str::from_utf8(val.as_bytes()).ok()?.parse().ok())
     }
 
     /// Get the full response body as `Bytes`.
