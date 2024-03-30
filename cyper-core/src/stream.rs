@@ -303,9 +303,14 @@ impl<S: AsyncWrite + Unpin + 'static> hyper::rt::Write for HyperStream<S> {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         let mut this = self.project();
+
+        if this.shutdown_future.is_some() {
+            debug_assert!(this.write_future.is_none());
+            return Poll::Pending;
+        }
+
         let inner: &'static mut SyncStream<S> =
             unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
-
         poll_future_would_block!(
             this.write_future,
             cx,
@@ -316,6 +321,12 @@ impl<S: AsyncWrite + Unpin + 'static> hyper::rt::Write for HyperStream<S> {
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let mut this = self.project();
+
+        if this.shutdown_future.is_some() {
+            debug_assert!(this.write_future.is_none());
+            return Poll::Pending;
+        }
+
         let inner: &'static mut SyncStream<S> =
             unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
         let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
@@ -328,6 +339,7 @@ impl<S: AsyncWrite + Unpin + 'static> hyper::rt::Write for HyperStream<S> {
         // Avoid shutdown on flush because the inner buffer might be passed to the
         // driver.
         if this.write_future.is_some() {
+            debug_assert!(this.shutdown_future.is_none());
             return Poll::Pending;
         }
 
