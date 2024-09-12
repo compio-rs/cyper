@@ -14,7 +14,7 @@ async fn response_text() {
     let client = Client::new();
 
     let res = client
-        .get(&format!("http://{}/text", server.addr()))
+        .get(format!("http://{}/text", server.addr()))
         .expect("cannot create request builder")
         .send()
         .await
@@ -31,7 +31,7 @@ async fn response_bytes() {
     let client = Client::new();
 
     let res = client
-        .get(&format!("http://{}/bytes", server.addr()))
+        .get(format!("http://{}/bytes", server.addr()))
         .expect("cannot create request builder")
         .send()
         .await
@@ -49,7 +49,7 @@ async fn response_json() {
     let client = Client::new();
 
     let res = client
-        .get(&format!("http://{}/json", server.addr()))
+        .get(format!("http://{}/json", server.addr()))
         .expect("cannot create request builder")
         .send()
         .await
