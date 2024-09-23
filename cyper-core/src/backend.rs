@@ -32,16 +32,7 @@ impl TlsBackend {
     /// Create [`TlsBackend`] with default rustls client config.
     #[cfg(feature = "rustls")]
     pub fn default_rustls() -> Self {
-        let mut store = compio::tls::rustls::RootCertStore::empty();
-        for cert in rustls_native_certs::load_native_certs().unwrap() {
-            store.add(cert).unwrap();
-        }
-
-        Self::Rustls(std::sync::Arc::new(
-            compio::tls::rustls::ClientConfig::builder()
-                .with_root_certificates(store)
-                .with_no_client_auth(),
-        ))
+        Self::Rustls(std::sync::Arc::new(rustls_platform_verifier::tls_config()))
     }
 
     #[cfg(any(feature = "native-tls", feature = "rustls"))]

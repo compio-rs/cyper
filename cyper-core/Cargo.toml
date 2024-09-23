@@ -1,6 +1,6 @@
 [package]
 name = "cyper-core"
-version = "0.1.0-beta.5"
+version = "0.1.0-beta.6"
 description = "Core adaptors and services for compio running on hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
@@ -17,7 +17,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 compio = { workspace = true, features = ["io-compat"] }
 
-rustls-native-certs = { workspace = true, optional = true }
+rustls-platform-verifier = { workspace = true, optional = true }
 
 cfg-if = { workspace = true }
 hyper = { workspace = true }
@@ -29,7 +29,7 @@ tower-service = { version = "0.3.2", optional = true }
 [features]
 default = ["native-tls"]
 native-tls = ["compio/native-tls"]
-rustls = ["compio/rustls", "dep:rustls-native-certs"]
+rustls = ["compio/rustls", "dep:rustls-platform-verifier"]
 
 client = ["hyper-util/client-legacy", "hyper-util/http1", "dep:tower-service"]
 server = ["hyper-util/server-auto"]
