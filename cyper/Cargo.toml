@@ -19,7 +19,7 @@ compio = { workspace = true, features = ["time", "bytes"] }
 cyper-core = { workspace = true, features = ["client"] }
 
 http = "1.0.0"
-hyper = { workspace = true, features = ["client", "http1"] }
+hyper = { workspace = true, features = ["client", "http1", "http2"] }
 hyper-util = { workspace = true }
 
 base64 = "0.22"

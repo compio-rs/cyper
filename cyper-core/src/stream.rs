@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     future::Future,
     io,
     marker::PhantomPinned,
@@ -61,6 +62,13 @@ impl HttpStreamInner {
     #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub fn from_tls(s: TlsStream<TcpStream>) -> Self {
         Self::Tls(s)
+    }
+
+    fn negotiated_alpn(&self) -> Option<Cow<[u8]>> {
+        match self {
+            Self::Tcp(_) => None,
+            Self::Tls(s) => s.negotiated_alpn(),
+        }
     }
 }
 
@@ -177,7 +185,15 @@ impl hyper::rt::Write for HttpStream {
 #[cfg(feature = "client")]
 impl Connection for HttpStream {
     fn connected(&self) -> Connected {
-        Connected::new()
+        let conn = Connected::new();
+        let is_h2 = self
+            .0
+            .inner
+            .get_ref()
+            .negotiated_alpn()
+            .map(|alpn| alpn.as_slice() == b"h2")
+            .unwrap_or_default();
+        if is_h2 { conn.negotiated_h2() } else { conn }
     }
 }
 
@@ -190,7 +206,6 @@ pub struct HyperStream<S> {
     inner: SendWrapper<SyncStream<S>>,
     read_future: Option<PinBoxFuture<io::Result<usize>>>,
     write_future: Option<PinBoxFuture<io::Result<usize>>>,
-    shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
     // This struct could not be Unpin because the futures keeps the pointer to the stream
     _p: PhantomPinned,
 }
@@ -202,7 +217,6 @@ impl<S> HyperStream<S> {
             inner: SendWrapper::new(SyncStream::new(s)),
             read_future: None,
             write_future: None,
-            shutdown_future: None,
             _p: PhantomPinned,
         }
     }
@@ -304,11 +318,6 @@ impl<S: AsyncWrite + Unpin + 'static> hyper::rt::Write for HyperStream<S> {
     ) -> Poll<io::Result<usize>> {
         let mut this = self.project();
 
-        if this.shutdown_future.is_some() {
-            debug_assert!(this.write_future.is_none());
-            return Poll::Pending;
-        }
-
         let inner: &'static mut SyncStream<S> =
             unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
         poll_future_would_block!(
@@ -322,11 +331,6 @@ impl<S: AsyncWrite + Unpin + 'static> hyper::rt::Write for HyperStream<S> {
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let mut this = self.project();
 
-        if this.shutdown_future.is_some() {
-            debug_assert!(this.write_future.is_none());
-            return Poll::Pending;
-        }
-
         let inner: &'static mut SyncStream<S> =
             unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
         let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
@@ -334,18 +338,6 @@ impl<S: AsyncWrite + Unpin + 'static> hyper::rt::Write for HyperStream<S> {
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let mut this = self.project();
-
-        // Avoid shutdown on flush because the inner buffer might be passed to the
-        // driver.
-        if this.write_future.is_some() {
-            debug_assert!(this.shutdown_future.is_none());
-            return Poll::Pending;
-        }
-
-        let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
-        let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
-        Poll::Ready(res)
+        self.poll_flush(cx)
     }
 }

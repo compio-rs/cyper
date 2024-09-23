@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cyper_core::{CompioExecutor, Connector, TlsBackend};
+use cyper_core::{CompioExecutor, CompioTimer, Connector, TlsBackend};
 use http::header::Entry;
 use hyper::{HeaderMap, Method, Uri};
 #[cfg(feature = "cookies")]
@@ -179,6 +179,7 @@ impl ClientBuilder {
     pub fn build(self) -> Client {
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
+            .timer(CompioTimer)
             .build(Connector::new(self.tls));
         let client_ref = ClientInner {
             client,
