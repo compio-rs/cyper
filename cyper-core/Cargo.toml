@@ -1,6 +1,6 @@
 [package]
 name = "cyper-core"
-version = "0.1.0-beta.6"
+version = "0.1.0-beta.7"
 description = "Core adaptors and services for compio running on hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
@@ -31,7 +31,12 @@ default = ["native-tls"]
 native-tls = ["compio/native-tls"]
 rustls = ["compio/rustls", "dep:rustls-platform-verifier"]
 
-client = ["hyper-util/client-legacy", "hyper-util/http1", "dep:tower-service"]
+client = [
+    "hyper-util/client-legacy",
+    "hyper-util/http1",
+    "hyper-util/http2",
+    "dep:tower-service",
+]
 server = ["hyper-util/server-auto"]
 
 all = ["native-tls", "rustls", "client", "server"]
