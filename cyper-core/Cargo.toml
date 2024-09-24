@@ -41,5 +41,4 @@ server = ["hyper-util/server-auto"]
 
 all = ["native-tls", "rustls", "client", "server"]
 
-read_buf = ["compio/read_buf"]
-nightly = ["read_buf", "compio/nightly"]
+nightly = ["compio/nightly"]

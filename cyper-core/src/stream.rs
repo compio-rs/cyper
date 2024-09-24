@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
     io,
-    mem::MaybeUninit,
     ops::DerefMut,
     pin::Pin,
     task::{ready, Context, Poll},
@@ -213,10 +212,7 @@ impl<S: AsyncRead + Unpin + 'static> hyper::rt::Read for HyperStream<S> {
     ) -> Poll<io::Result<()>> {
         let stream = unsafe { self.map_unchecked_mut(|this| this.0.deref_mut()) };
         let slice = unsafe { buf.as_mut() };
-        slice.fill(MaybeUninit::new(0));
-        let slice =
-            unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len()) };
-        let len = ready!(futures_util::AsyncRead::poll_read(stream, cx, slice))?;
+        let len = ready!(stream.poll_read_uninit(cx, slice))?;
         unsafe { buf.advance(len) };
         Poll::Ready(Ok(()))
     }
