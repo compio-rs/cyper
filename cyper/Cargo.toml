@@ -43,6 +43,7 @@ compio = { workspace = true, features = ["macros"] }
 cyper-core = { workspace = true, features = ["server"] }
 rustls = { workspace = true, features = ["ring"] }
 
+clap = { version = "4", features = ["derive"] }
 cookie = "0.18"
 futures-channel = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
