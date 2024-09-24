@@ -65,7 +65,7 @@ impl DualEndpoint {
         })
     }
 
-    fn end(&self, is_v4: bool) -> &Endpoint {
+    fn end(&self, _is_v4: bool) -> &Endpoint {
         #[cfg(not(any(
             target_os = "linux",
             target_os = "macos",
@@ -74,7 +74,7 @@ impl DualEndpoint {
             target_os = "tvos"
         )))]
         {
-            if is_v4 { &self.v4end } else { &self.v6end }
+            if _is_v4 { &self.v4end } else { &self.v6end }
         }
         #[cfg(any(
             target_os = "linux",
