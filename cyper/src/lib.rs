@@ -20,6 +20,9 @@ pub use into_url::*;
 
 mod util;
 
+#[cfg(feature = "http3")]
+mod http3;
+
 /// The error type used in `compio-http`.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -52,6 +55,26 @@ pub enum Error {
     #[cfg(feature = "json")]
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
+    /// H3 error.
+    #[cfg(feature = "http3")]
+    #[error("`h3` error: {0}")]
+    H3(#[from] h3::Error),
+    /// Custom H3 error.
+    #[cfg(feature = "http3")]
+    #[error("HTTP3 client error: {0}")]
+    H3Client(String),
+    /// QUIC [`ConnectError`].
+    ///
+    /// [`ConnectError`]: compio::quic::ConnectError
+    #[cfg(feature = "http3")]
+    #[error("QUIC connect error: {0}")]
+    QuicConnect(#[from] compio::quic::ConnectError),
+    /// QUIC [`ConnectionError`].
+    ///
+    /// [`ConnectionError`]: compio::quic::ConnectionError
+    #[cfg(feature = "http3")]
+    #[error("QUIC connection error: {0}")]
+    QuicConnection(#[from] compio::quic::ConnectionError),
 }
 
 /// The result type used in `compio-http`.

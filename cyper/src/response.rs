@@ -8,18 +8,34 @@ use hyper::body::{Body, Incoming};
 use mime::Mime;
 use url::Url;
 
-use crate::Result;
+use crate::{ResponseBody, Result};
 
 /// A Response to a submitted `Request`.
 #[derive(Debug)]
 pub struct Response {
-    pub(super) res: hyper::Response<Incoming>,
+    pub(super) res: hyper::Response<()>,
+    body: ResponseBody,
     url: Url,
 }
 
 impl Response {
-    pub(super) fn new(res: hyper::Response<Incoming>, url: Url) -> Response {
-        Response { res, url }
+    pub(super) fn new(res: hyper::Response<Incoming>, url: Url) -> Self {
+        let (res, body) = res.into_parts();
+        let res = hyper::Response::from_parts(res, ());
+        Self {
+            res,
+            body: ResponseBody::Incoming(body),
+            url,
+        }
+    }
+
+    #[cfg(feature = "http3")]
+    pub(crate) fn with_body(res: hyper::Response<()>, body: Bytes, url: Url) -> Self {
+        Self {
+            res,
+            body: ResponseBody::Blob(crate::Body(Some(body))),
+            url,
+        }
     }
 
     /// Get the `StatusCode` of this `Response`.
@@ -54,7 +70,7 @@ impl Response {
     /// - The response is compressed and automatically decoded (thus changing
     ///   the actual decoded length).
     pub fn content_length(&self) -> Option<u64> {
-        self.res.body().size_hint().exact()
+        self.body.size_hint().exact()
     }
 
     /// Get the final `Url` of this `Response`.
@@ -233,6 +249,6 @@ impl Response {
     /// # }
     /// ```
     pub async fn bytes(self) -> Result<Bytes> {
-        Ok(self.res.into_body().collect().await?.to_bytes())
+        Ok(self.body.collect().await?.to_bytes())
     }
 }
