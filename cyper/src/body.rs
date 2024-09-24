@@ -5,11 +5,11 @@ use std::{
 };
 
 use compio::bytes::Bytes;
-use hyper::body::Frame;
+use hyper::body::{Frame, Incoming, SizeHint};
 
 /// A request body.
 #[derive(Debug, Default, Clone)]
-pub struct Body(Option<Bytes>);
+pub struct Body(pub(crate) Option<Bytes>);
 
 impl Body {
     /// Create an empty request body.
@@ -27,6 +27,13 @@ impl hyper::body::Body for Body {
         _cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         Poll::Ready(self.0.take().map(|buf| Ok(Frame::data(buf))))
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        match &self.0 {
+            None => SizeHint::default(),
+            Some(b) => SizeHint::with_exact(b.len() as _),
+        }
     }
 }
 
@@ -61,6 +68,40 @@ impl Deref for Body {
         match &self.0 {
             Some(bytes) => bytes,
             None => &[],
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum ResponseBody {
+    Incoming(Incoming),
+    #[cfg(feature = "http3")]
+    Blob(crate::Body),
+}
+
+impl hyper::body::Body for ResponseBody {
+    type Data = Bytes;
+    type Error = crate::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let this = unsafe { self.get_unchecked_mut() };
+        match this {
+            Self::Incoming(b) => unsafe { Pin::new_unchecked(b) }
+                .poll_frame(cx)
+                .map_err(|e| e.into()),
+            #[cfg(feature = "http3")]
+            Self::Blob(b) => unsafe { Pin::new_unchecked(b) }.poll_frame(cx),
+        }
+    }
+
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        match self {
+            Self::Incoming(b) => b.size_hint(),
+            #[cfg(feature = "http3")]
+            Self::Blob(b) => b.size_hint(),
         }
     }
 }

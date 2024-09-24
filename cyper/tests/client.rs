@@ -97,6 +97,20 @@ async fn test_rustls() {
     resp.text().await.unwrap();
 }
 
+#[compio::test]
+#[cfg(feature = "http3")]
+async fn test_http3() {
+    let resp = Client::builder()
+        .build()
+        .get("https://www.example.com")
+        .unwrap()
+        .version(http::Version::HTTP_3)
+        .send()
+        .await
+        .unwrap();
+    resp.text().await.unwrap();
+}
+
 #[test]
 #[cfg(feature = "json")]
 fn add_json_default_content_type_if_not_set_manually() {

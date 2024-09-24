@@ -1,23 +1,21 @@
 use std::{
-    future::Future,
+    borrow::Cow,
     io,
-    marker::PhantomPinned,
     ops::DerefMut,
     pin::Pin,
-    task::{Context, Poll},
+    task::{ready, Context, Poll},
 };
 
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
 use compio::tls::TlsStream;
 use compio::{
     buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    io::{compat::SyncStream, AsyncRead, AsyncWrite},
+    io::{compat::AsyncStream, AsyncRead, AsyncWrite},
     net::TcpStream,
 };
 use hyper::Uri;
 #[cfg(feature = "client")]
 use hyper_util::client::legacy::connect::{Connected, Connection};
-use pin_project::pin_project;
 use send_wrapper::SendWrapper;
 
 use crate::TlsBackend;
@@ -61,6 +59,13 @@ impl HttpStreamInner {
     #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub fn from_tls(s: TlsStream<TcpStream>) -> Self {
         Self::Tls(s)
+    }
+
+    fn negotiated_alpn(&self) -> Option<Cow<[u8]>> {
+        match self {
+            Self::Tcp(_) => None,
+            Self::Tls(s) => s.negotiated_alpn(),
+        }
     }
 }
 
@@ -177,122 +182,39 @@ impl hyper::rt::Write for HttpStream {
 #[cfg(feature = "client")]
 impl Connection for HttpStream {
     fn connected(&self) -> Connected {
-        Connected::new()
+        let conn = Connected::new();
+        let is_h2 = self
+            .0
+            .0
+            .get_ref()
+            .negotiated_alpn()
+            .map(|alpn| alpn.as_slice() == b"h2")
+            .unwrap_or_default();
+        if is_h2 { conn.negotiated_h2() } else { conn }
     }
 }
 
-type PinBoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
-
 /// A stream wrapper for hyper.
-#[pin_project]
-pub struct HyperStream<S> {
-    #[pin]
-    inner: SendWrapper<SyncStream<S>>,
-    read_future: Option<PinBoxFuture<io::Result<usize>>>,
-    write_future: Option<PinBoxFuture<io::Result<usize>>>,
-    shutdown_future: Option<PinBoxFuture<io::Result<()>>>,
-    // This struct could not be Unpin because the futures keeps the pointer to the stream
-    _p: PhantomPinned,
-}
+pub struct HyperStream<S>(SendWrapper<AsyncStream<S>>);
 
 impl<S> HyperStream<S> {
     /// Create a hyper stream wrapper.
     pub fn new(s: S) -> Self {
-        Self {
-            inner: SendWrapper::new(SyncStream::new(s)),
-            read_future: None,
-            write_future: None,
-            shutdown_future: None,
-            _p: PhantomPinned,
-        }
+        Self(SendWrapper::new(AsyncStream::new(s)))
     }
-}
-
-macro_rules! poll_future {
-    ($f:expr, $cx:expr, $e:expr) => {{
-        let mut future = match $f.take() {
-            Some(f) => f,
-            None => Box::pin(SendWrapper::new($e)),
-        };
-        let f = future.as_mut();
-        match f.poll($cx) {
-            Poll::Pending => {
-                $f.replace(future);
-                return Poll::Pending;
-            }
-            Poll::Ready(res) => res,
-        }
-    }};
-}
-
-macro_rules! poll_future_would_block {
-    ($f:expr, $cx:expr, $e:expr, $io:expr) => {{
-        if let Some(mut f) = $f.take() {
-            if f.as_mut().poll($cx).is_pending() {
-                $f.replace(f);
-                return Poll::Pending;
-            }
-        }
-
-        match $io {
-            Ok(len) => Poll::Ready(Ok(len)),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                $f.replace(Box::pin(SendWrapper::new($e)));
-                $cx.waker().wake_by_ref();
-                Poll::Pending
-            }
-            Err(e) => Poll::Ready(Err(e)),
-        }
-    }};
-}
-
-#[cfg(not(feature = "read_buf"))]
-#[inline]
-fn read_buf(reader: &mut impl io::Read, mut buf: hyper::rt::ReadBufCursor<'_>) -> io::Result<()> {
-    use std::mem::MaybeUninit;
-
-    let slice = unsafe { buf.as_mut() };
-    slice.fill(MaybeUninit::new(0));
-    let slice = unsafe { &mut *(slice as *mut _ as *mut [u8]) };
-    let len = reader.read(slice)?;
-    unsafe { buf.advance(len) };
-    Ok(())
-}
-
-#[cfg(feature = "read_buf")]
-#[inline]
-fn read_buf(reader: &mut impl io::Read, mut buf: hyper::rt::ReadBufCursor<'_>) -> io::Result<()> {
-    let slice = unsafe { buf.as_mut() };
-    let len = {
-        let mut borrowed_buf = io::BorrowedBuf::from(slice);
-        let mut cursor = borrowed_buf.unfilled();
-        reader.read_buf(cursor.reborrow())?;
-        cursor.written()
-    };
-    unsafe { buf.advance(len) };
-    Ok(())
 }
 
 impl<S: AsyncRead + Unpin + 'static> hyper::rt::Read for HyperStream<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: hyper::rt::ReadBufCursor<'_>,
+        mut buf: hyper::rt::ReadBufCursor<'_>,
     ) -> Poll<io::Result<()>> {
-        let mut this = self.project();
-        // Safety:
-        // - The futures won't live longer than the stream.
-        // - `self` is pinned.
-        // - The inner stream won't be moved.
-        let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
-
-        poll_future_would_block!(
-            this.read_future,
-            cx,
-            inner.fill_read_buf(),
-            read_buf(inner, buf)
-        )
+        let stream = unsafe { self.map_unchecked_mut(|this| this.0.deref_mut()) };
+        let slice = unsafe { buf.as_mut() };
+        let len = ready!(stream.poll_read_uninit(cx, slice))?;
+        unsafe { buf.advance(len) };
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -302,50 +224,17 @@ impl<S: AsyncWrite + Unpin + 'static> hyper::rt::Write for HyperStream<S> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let mut this = self.project();
-
-        if this.shutdown_future.is_some() {
-            debug_assert!(this.write_future.is_none());
-            return Poll::Pending;
-        }
-
-        let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
-        poll_future_would_block!(
-            this.write_future,
-            cx,
-            inner.flush_write_buf(),
-            io::Write::write(inner, buf)
-        )
+        let stream = unsafe { self.map_unchecked_mut(|this| this.0.deref_mut()) };
+        futures_util::AsyncWrite::poll_write(stream, cx, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let mut this = self.project();
-
-        if this.shutdown_future.is_some() {
-            debug_assert!(this.write_future.is_none());
-            return Poll::Pending;
-        }
-
-        let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
-        let res = poll_future!(this.write_future, cx, inner.flush_write_buf());
-        Poll::Ready(res.map(|_| ()))
+        let stream = unsafe { self.map_unchecked_mut(|this| this.0.deref_mut()) };
+        futures_util::AsyncWrite::poll_flush(stream, cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let mut this = self.project();
-
-        // Avoid shutdown on flush because the inner buffer might be passed to the
-        // driver.
-        if this.write_future.is_some() {
-            debug_assert!(this.shutdown_future.is_none());
-            return Poll::Pending;
-        }
-
-        let inner: &'static mut SyncStream<S> =
-            unsafe { &mut *(this.inner.deref_mut().deref_mut() as *mut _) };
-        let res = poll_future!(this.shutdown_future, cx, inner.get_mut().shutdown());
-        Poll::Ready(res)
+        let stream = unsafe { self.map_unchecked_mut(|this| this.0.deref_mut()) };
+        futures_util::AsyncWrite::poll_close(stream, cx)
     }
 }

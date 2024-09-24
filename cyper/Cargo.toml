@@ -1,6 +1,6 @@
 [package]
 name = "cyper"
-version = "0.1.0-beta.6"
+version = "0.1.0-beta.7"
 description = "HTTP client library based on compio and hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
@@ -16,12 +16,17 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 compio = { workspace = true, features = ["time", "bytes"] }
+compio-quic = { workspace = true, optional = true, features = [
+    "platform-verifier",
+] }
 cyper-core = { workspace = true, features = ["client"] }
 
 http = "1.0.0"
-hyper = { workspace = true, features = ["client", "http1"] }
+hyper = { workspace = true, features = ["client", "http1", "http2"] }
 hyper-util = { workspace = true }
+h3 = { version = "0.0.6", optional = true }
 
+async-once-cell = { version = "0.5.3", optional = true }
 base64 = "0.22"
 cookie_store = { version = "0.21", optional = true }
 encoding_rs = "0.8"
@@ -38,6 +43,7 @@ compio = { workspace = true, features = ["macros"] }
 cyper-core = { workspace = true, features = ["server"] }
 rustls = { workspace = true, features = ["ring"] }
 
+clap = { version = "4", features = ["derive"] }
 cookie = "0.18"
 futures-channel = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
@@ -50,10 +56,16 @@ native-tls = ["cyper-core/native-tls"]
 rustls = ["cyper-core/rustls"]
 cookies = ["dep:cookie_store"]
 json = ["dep:serde_json"]
-all = ["cookies", "json", "native-tls", "rustls"]
+http3 = [
+    "dep:compio-quic",
+    "dep:h3",
+    "dep:async-once-cell",
+    "compio/h3",
+    "rustls",
+]
+all = ["cookies", "json", "native-tls", "rustls", "http3"]
 
-read_buf = ["cyper-core/read_buf"]
-nightly = ["read_buf", "cyper-core/nightly"]
+nightly = ["cyper-core/nightly"]
 
 [[test]]
 name = "cookie"

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cyper_core::{CompioExecutor, Connector, TlsBackend};
+use cyper_core::{CompioExecutor, CompioTimer, Connector, TlsBackend};
 use http::header::Entry;
 use hyper::{HeaderMap, Method, Uri};
 #[cfg(feature = "cookies")]
@@ -14,6 +14,8 @@ use crate::{Body, IntoUrl, Request, RequestBuilder, Response, Result};
 #[derive(Debug, Clone)]
 pub struct Client {
     client: Arc<ClientInner>,
+    #[cfg(feature = "http3")]
+    h3_client: crate::http3::OnceCell<crate::http3::Client>,
 }
 
 impl Client {
@@ -28,6 +30,13 @@ impl Client {
     /// This is the same as `ClientBuilder::new()`.
     pub fn builder() -> ClientBuilder {
         ClientBuilder::new()
+    }
+
+    #[cfg(feature = "http3")]
+    async fn h3_client(&self) -> Result<&crate::http3::Client> {
+        self.h3_client
+            .get_or_try_init(crate::http3::Client::new())
+            .await
     }
 
     /// Send a request and wait for a response.
@@ -60,7 +69,18 @@ impl Client {
             .body(body)?;
         *request.headers_mut() = headers;
 
-        let res = self.client.client.request(request).await?;
+        #[cfg(feature = "http3")]
+        let res = if request.version() == http::Version::HTTP_3 {
+            self.h3_client().await?.request(request, &url).await?
+        } else {
+            let res = self.client.client.request(request).await?;
+            Response::new(res, url.clone())
+        };
+        #[cfg(not(feature = "http3"))]
+        let res = {
+            let res = self.client.client.request(request).await?;
+            Response::new(res, url.clone())
+        };
 
         #[cfg(feature = "cookies")]
         {
@@ -82,7 +102,7 @@ impl Client {
             }
         }
 
-        Ok(Response::new(res, url))
+        Ok(res)
     }
 
     #[cfg(feature = "cookies")]
@@ -179,6 +199,7 @@ impl ClientBuilder {
     pub fn build(self) -> Client {
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
+            .timer(CompioTimer)
             .build(Connector::new(self.tls));
         let client_ref = ClientInner {
             client,
@@ -188,6 +209,8 @@ impl ClientBuilder {
         };
         Client {
             client: Arc::new(client_ref),
+            #[cfg(feature = "http3")]
+            h3_client: crate::http3::OnceCell::new(),
         }
     }
 
