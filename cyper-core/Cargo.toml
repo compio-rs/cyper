@@ -15,7 +15,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-compio = { workspace = true, features = ["io-compat"] }
+compio = { workspace = true, features = ["io-compat", "time"] }
 
 rustls-platform-verifier = { workspace = true, optional = true }
 
