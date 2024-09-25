@@ -15,7 +15,7 @@ pub struct Client {
     client: Arc<ClientInner>,
     #[cfg(feature = "http3")]
     h3_client: Arc<async_once_cell::OnceCell<crate::http3::Client>>,
-    #[cfg(feature = "http3")]
+    #[cfg(feature = "http3-altsvc")]
     h3_hosts: crate::altsvc::KnownHosts,
 }
 
@@ -72,10 +72,13 @@ impl Client {
 
         #[cfg(feature = "http3")]
         let res = {
+            #[cfg(feature = "http3-altsvc")]
             let host = url.host_str().expect("a parsed Url should have host");
 
+            #[allow(unused_mut)]
             let mut should_http3 = request.version() == http::Version::HTTP_3;
 
+            #[cfg(feature = "http3-altsvc")]
             if url.port().is_none() && self.h3_hosts.find(host) {
                 if let Ok(value) = HeaderValue::from_bytes(host.as_bytes()) {
                     request.headers_mut().insert("Alt-Used", value);
@@ -91,6 +94,7 @@ impl Client {
             } else {
                 self.send_h1h2_request(request, &url).await?
             };
+            #[cfg(feature = "http3-altsvc")]
             if let Some(alt_svc) = res.headers().get(http::header::ALT_SVC) {
                 if let Ok(alt_svc) = std::str::from_utf8(alt_svc.as_bytes()) {
                     if let Ok(services) = crate::altsvc::parse(alt_svc) {
@@ -246,7 +250,7 @@ impl ClientBuilder {
             client: Arc::new(client_ref),
             #[cfg(feature = "http3")]
             h3_client: Arc::new(async_once_cell::OnceCell::new()),
-            #[cfg(feature = "http3")]
+            #[cfg(feature = "http3-altsvc")]
             h3_hosts: crate::altsvc::KnownHosts::default(),
         }
     }

@@ -1,6 +1,6 @@
 [package]
 name = "cyper"
-version = "0.1.2"
+version = "0.1.3"
 description = "HTTP client library based on compio and hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
@@ -67,7 +67,16 @@ http3 = [
     "compio/h3",
     "rustls",
 ]
-all = ["cookies", "json", "native-tls", "rustls", "http2", "http3"]
+http3-altsvc = ["http3"]
+all = [
+    "cookies",
+    "json",
+    "native-tls",
+    "rustls",
+    "http2",
+    "http3",
+    "http3-altsvc",
+]
 
 nightly = ["cyper-core/nightly"]
 
