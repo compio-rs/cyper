@@ -8,13 +8,15 @@
 
 An HTTP library based on [compio](https://github.com/compio-rs/compio) and [hyper](https://github.com/hyperium/hyper).
 
+This project references code from [reqwest](https://github.com/seanmonstar/reqwest).
+
 ## Quick start
 
 Add `compio` and `cyper` as dependency:
 
 ```
 compio = { version = "0.12.0", features = ["macros"] }
-cyper = "0.1.0-beta.5"
+cyper = "0.1.0"
 ```
 
 Then we can start a simple HTTP request:
@@ -25,10 +27,28 @@ use cyper::Client;
 #[compio::main]
 async fn main() {
     let client = Client::new();
-    let response = client.get("https://www.example.com/").send().await.unwrap();
+    let response = client
+        .get("https://www.example.com/")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
     println!("{}", response.text().await.unwrap());
 }
 ```
+
+## Features
+- [x] HTTPS - powered by compio-tls
+  - [x] native-tls
+  - [x] rustls
+- [x] HTTP 2
+- [x] HTTP 3 - powered by compio-quic
+- [x] cookies
+- [x] charset
+- [x] serde-json
+- [ ] compression
+  - [ ] gzip
+  - [ ] brotli
 
 ## Contributing
 

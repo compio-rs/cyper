@@ -12,7 +12,7 @@ repository = "https://github.com/compio-rs/cyper"
 [workspace.dependencies]
 compio = "0.12.0"
 compio-quic = "0.1.0"
-cyper-core = { path = "./cyper-core", default-features = false, version = "0.1.0-beta.7" }
+cyper-core = { path = "./cyper-core", default-features = false, version = "0.1.0" }
 
 cfg-if = "1.0.0"
 futures-channel = "0.3.29"
