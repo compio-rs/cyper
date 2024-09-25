@@ -70,7 +70,7 @@ impl Request {
 
     /// Get the body.
     #[inline]
-    pub fn body(&self) -> &[u8] {
+    pub fn body(&self) -> &Body {
         &self.body
     }
 

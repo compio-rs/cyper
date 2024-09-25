@@ -33,7 +33,7 @@ impl Response {
     pub(crate) fn with_body(res: hyper::Response<()>, body: Bytes, url: Url) -> Self {
         Self {
             res,
-            body: ResponseBody::Blob(crate::Body(Some(body))),
+            body: ResponseBody::Blob(body),
             url,
         }
     }

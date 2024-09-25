@@ -17,10 +17,12 @@ use compio::{
         ClientBuilder, ConnectError, Connecting, Connection, Endpoint,
     },
 };
+use futures_util::TryStreamExt;
 use http::{
     uri::{Authority, Scheme},
     Request, Uri,
 };
+use http_body_util::BodyDataStream;
 use hyper::body::Buf;
 use url::Url;
 
@@ -162,11 +164,9 @@ impl PoolClient {
 
         let mut stream = self.inner.send_request(req).await?;
 
-        let req_body = req_body.0;
-        if let Some(b) = req_body {
-            if !b.is_empty() {
-                stream.send_data(b).await?;
-            }
+        let mut req_body = BodyDataStream::new(req_body);
+        while let Some(b) = req_body.try_next().await? {
+            stream.send_data(b).await?;
         }
 
         stream.finish().await?;

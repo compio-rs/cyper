@@ -27,11 +27,14 @@ hyper-util = { workspace = true }
 h3 = { version = "0.0.6", optional = true }
 
 async-once-cell = { version = "0.5.3", optional = true }
+async-stream = "0.3"
 base64 = "0.22"
 cookie_store = { version = "0.21", optional = true }
 encoding_rs = "0.8"
+futures-util = { workspace = true }
 http-body-util = "0.1.0"
 mime = "0.3"
+send_wrapper = { workspace = true, features = ["futures"] }
 serde = "1"
 serde_json = { version = "1", optional = true }
 serde_urlencoded = "0.7"

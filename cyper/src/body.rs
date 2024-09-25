@@ -1,20 +1,102 @@
 use std::{
-    ops::Deref,
+    fmt::Debug,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use compio::bytes::Bytes;
+use async_stream::try_stream;
+use compio::{bytes::Bytes, fs::File, io::AsyncReadAt, BufResult};
+use futures_util::{Stream, StreamExt};
 use hyper::body::{Frame, Incoming, SizeHint};
+use send_wrapper::SendWrapper;
+
+enum BodyInner {
+    Bytes(Bytes),
+    Stream(Pin<Box<dyn Stream<Item = crate::Result<Bytes>> + Send>>),
+}
+
+impl hyper::body::Body for BodyInner {
+    type Data = Bytes;
+    type Error = crate::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        match self.get_mut() {
+            Self::Bytes(b) => {
+                if b.is_empty() {
+                    Poll::Ready(None)
+                } else {
+                    Poll::Ready(Some(Ok(Frame::data(std::mem::replace(b, Bytes::new())))))
+                }
+            }
+            Self::Stream(s) => s.poll_next_unpin(cx).map(|b| b.map(|b| b.map(Frame::data))),
+        }
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        match self {
+            Self::Bytes(b) => SizeHint::with_exact(b.len() as _),
+            Self::Stream(_) => SizeHint::default(),
+        }
+    }
+}
+
+impl Debug for BodyInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bytes(b) => f.debug_tuple("Bytes").field(b).finish(),
+            Self::Stream(_) => f.debug_struct("Stream").finish_non_exhaustive(),
+        }
+    }
+}
+
+fn wrap_async_read_at(r: impl AsyncReadAt) -> impl Stream<Item = crate::Result<Bytes>> {
+    try_stream! {
+        let mut offset = 0;
+        loop {
+            let buffer = Vec::with_capacity(1024);
+            let BufResult(res, buffer) = r.read_at(buffer, offset).await;
+            let len = res?;
+            if len == 0 {
+                break;
+            }
+            offset += len as u64;
+            yield Bytes::from(buffer);
+        }
+    }
+}
 
 /// A request body.
-#[derive(Debug, Default, Clone)]
-pub struct Body(pub(crate) Option<Bytes>);
+#[derive(Debug)]
+pub struct Body(BodyInner);
+
+impl Default for Body {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
 
 impl Body {
     /// Create an empty request body.
     pub const fn empty() -> Self {
-        Self(None)
+        Self(BodyInner::Bytes(Bytes::new()))
+    }
+
+    /// Wrap a futures [`Stream`] in a box inside [`Body`].
+    pub fn stream(s: impl Stream<Item = crate::Result<Bytes>> + Send + 'static) -> Self {
+        Self(BodyInner::Stream(Box::pin(s)))
+    }
+
+    /// Returns a reference to the internal data of the `Body`.
+    ///
+    /// [`None`] is returned, if the underlying data is a stream.
+    pub fn as_bytes(&self) -> Option<&Bytes> {
+        match &self.0 {
+            BodyInner::Bytes(b) => Some(b),
+            BodyInner::Stream(_) => None,
+        }
     }
 }
 
@@ -23,52 +105,50 @@ impl hyper::body::Body for Body {
     type Error = crate::Error;
 
     fn poll_frame(
-        mut self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        Poll::Ready(self.0.take().map(|buf| Ok(Frame::data(buf))))
+        unsafe { self.map_unchecked_mut(|this| &mut this.0) }.poll_frame(cx)
     }
 
     fn size_hint(&self) -> SizeHint {
-        match &self.0 {
-            None => SizeHint::default(),
-            Some(b) => SizeHint::with_exact(b.len() as _),
-        }
+        self.0.size_hint()
+    }
+}
+
+impl From<Bytes> for Body {
+    fn from(value: Bytes) -> Self {
+        Self(BodyInner::Bytes(value))
     }
 }
 
 impl From<String> for Body {
     fn from(value: String) -> Self {
-        Self(Some(Bytes::from(value.into_bytes())))
+        Self(BodyInner::Bytes(Bytes::from(value.into_bytes())))
     }
 }
 
 impl From<&'static str> for Body {
     fn from(value: &'static str) -> Self {
-        Self(Some(Bytes::from_static(value.as_bytes())))
+        Self(BodyInner::Bytes(Bytes::from_static(value.as_bytes())))
     }
 }
 
 impl From<Vec<u8>> for Body {
     fn from(value: Vec<u8>) -> Self {
-        Self(Some(Bytes::from(value)))
+        Self(BodyInner::Bytes(Bytes::from(value)))
     }
 }
 
 impl From<&'static [u8]> for Body {
     fn from(value: &'static [u8]) -> Self {
-        Self(Some(Bytes::from_static(value)))
+        Self(BodyInner::Bytes(Bytes::from_static(value)))
     }
 }
 
-impl Deref for Body {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        match &self.0 {
-            Some(bytes) => bytes,
-            None => &[],
-        }
+impl From<File> for Body {
+    fn from(value: File) -> Self {
+        Self::stream(SendWrapper::new(wrap_async_read_at(value)))
     }
 }
 
@@ -76,7 +156,7 @@ impl Deref for Body {
 pub(crate) enum ResponseBody {
     Incoming(Incoming),
     #[cfg(feature = "http3")]
-    Blob(crate::Body),
+    Blob(Bytes),
 }
 
 impl hyper::body::Body for ResponseBody {
@@ -93,15 +173,21 @@ impl hyper::body::Body for ResponseBody {
                 .poll_frame(cx)
                 .map_err(|e| e.into()),
             #[cfg(feature = "http3")]
-            Self::Blob(b) => unsafe { Pin::new_unchecked(b) }.poll_frame(cx),
+            Self::Blob(b) => {
+                if b.is_empty() {
+                    Poll::Ready(None)
+                } else {
+                    Poll::Ready(Some(Ok(Frame::data(std::mem::replace(b, Bytes::new())))))
+                }
+            }
         }
     }
 
-    fn size_hint(&self) -> hyper::body::SizeHint {
+    fn size_hint(&self) -> SizeHint {
         match self {
             Self::Incoming(b) => b.size_hint(),
             #[cfg(feature = "http3")]
-            Self::Blob(b) => b.size_hint(),
+            Self::Blob(b) => SizeHint::with_exact(b.len() as _),
         }
     }
 }

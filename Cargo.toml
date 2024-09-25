@@ -16,6 +16,7 @@ cyper-core = { path = "./cyper-core", default-features = false, version = "0.1.0
 
 cfg-if = "1.0.0"
 futures-channel = "0.3.29"
+futures-util = "0.3.30"
 send_wrapper = "0.6"
 
 rustls = { version = "0.23.13", default-features = false }
