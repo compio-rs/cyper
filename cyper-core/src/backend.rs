@@ -33,7 +33,11 @@ impl TlsBackend {
     #[cfg(feature = "rustls")]
     pub fn default_rustls() -> Self {
         let mut config = rustls_platform_verifier::tls_config();
-        config.alpn_protocols = vec![b"h2".into(), b"http/1.1".into()];
+        config.alpn_protocols = if cfg!(feature = "http2") {
+            vec![b"h2".into(), b"http/1.1".into()]
+        } else {
+            vec![b"http/1.1".into()]
+        };
         Self::Rustls(std::sync::Arc::new(config))
     }
 
@@ -47,7 +51,11 @@ impl TlsBackend {
             #[cfg(feature = "native-tls")]
             Self::NativeTls => Ok(TlsConnector::from(
                 compio::tls::native_tls::TlsConnector::builder()
-                    .request_alpns(&["h2", "http/1.1"])
+                    .request_alpns(if cfg!(feature = "http2") {
+                        &["h2", "http/1.1"]
+                    } else {
+                        &["http/1.1"]
+                    })
                     .build()
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
             )),

@@ -22,7 +22,7 @@ compio-quic = { workspace = true, optional = true, features = [
 cyper-core = { workspace = true, features = ["client"] }
 
 http = "1.0.0"
-hyper = { workspace = true, features = ["client", "http1", "http2"] }
+hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true }
 h3 = { version = "0.0.6", optional = true }
 
@@ -56,6 +56,7 @@ native-tls = ["cyper-core/native-tls"]
 rustls = ["cyper-core/rustls"]
 cookies = ["dep:cookie_store"]
 json = ["dep:serde_json"]
+http2 = ["hyper-util/http2", "cyper-core/http2"]
 http3 = [
     "dep:compio-quic",
     "dep:h3",
@@ -63,7 +64,7 @@ http3 = [
     "compio/h3",
     "rustls",
 ]
-all = ["cookies", "json", "native-tls", "rustls", "http3"]
+all = ["cookies", "json", "native-tls", "rustls", "http2", "http3"]
 
 nightly = ["cyper-core/nightly"]
 

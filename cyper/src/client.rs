@@ -3,10 +3,9 @@ use std::sync::Arc;
 use cyper_core::{CompioExecutor, CompioTimer, Connector, TlsBackend};
 use http::header::Entry;
 use hyper::{HeaderMap, Method, Uri};
+use url::Url;
 #[cfg(feature = "cookies")]
-use {
-    compio::bytes::Bytes, cookie_store::CookieStore, http::HeaderValue, std::sync::RwLock, url::Url,
-};
+use {compio::bytes::Bytes, cookie_store::CookieStore, http::HeaderValue, std::sync::RwLock};
 
 use crate::{Body, IntoUrl, Request, RequestBuilder, Response, Result};
 
@@ -15,7 +14,7 @@ use crate::{Body, IntoUrl, Request, RequestBuilder, Response, Result};
 pub struct Client {
     client: Arc<ClientInner>,
     #[cfg(feature = "http3")]
-    h3_client: crate::http3::OnceCell<crate::http3::Client>,
+    h3_client: Arc<async_once_cell::OnceCell<crate::http3::Client>>,
 }
 
 impl Client {
@@ -73,14 +72,10 @@ impl Client {
         let res = if request.version() == http::Version::HTTP_3 {
             self.h3_client().await?.request(request, &url).await?
         } else {
-            let res = self.client.client.request(request).await?;
-            Response::new(res, url.clone())
+            self.send_h1h2_request(request, &url).await?
         };
         #[cfg(not(feature = "http3"))]
-        let res = {
-            let res = self.client.client.request(request).await?;
-            Response::new(res, url.clone())
-        };
+        let res = self.send_h1h2_request(request, &url).await?;
 
         #[cfg(feature = "cookies")]
         {
@@ -103,6 +98,11 @@ impl Client {
         }
 
         Ok(res)
+    }
+
+    async fn send_h1h2_request(&self, request: http::Request<Body>, url: &Url) -> Result<Response> {
+        let res = self.client.client.request(request).await?;
+        Ok(Response::new(res, url.clone()))
     }
 
     #[cfg(feature = "cookies")]
@@ -210,7 +210,7 @@ impl ClientBuilder {
         Client {
             client: Arc::new(client_ref),
             #[cfg(feature = "http3")]
-            h3_client: crate::http3::OnceCell::new(),
+            h3_client: Arc::new(async_once_cell::OnceCell::new()),
         }
     }
 

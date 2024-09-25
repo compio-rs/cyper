@@ -31,14 +31,11 @@ default = ["native-tls"]
 native-tls = ["compio/native-tls"]
 rustls = ["compio/rustls", "dep:rustls-platform-verifier"]
 
-client = [
-    "hyper-util/client-legacy",
-    "hyper-util/http1",
-    "hyper-util/http2",
-    "dep:tower-service",
-]
+client = ["hyper-util/client-legacy", "hyper-util/http1", "dep:tower-service"]
 server = ["hyper-util/server-auto"]
 
-all = ["native-tls", "rustls", "client", "server"]
+http2 = ["hyper-util/http2"]
+
+all = ["native-tls", "rustls", "client", "server", "http2"]
 
 nightly = ["compio/nightly"]

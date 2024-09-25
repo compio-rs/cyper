@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
-    future::Future,
     net::SocketAddr,
     sync::{
         mpsc::{Receiver, TryRecvError},
@@ -123,7 +122,7 @@ impl Connector {
 
         let mut err = None;
         for remote in (host, port).to_socket_addrs_async().await? {
-            match async { Result::Ok(self.endpoint.connect(remote, server_name)?.await?) }.await {
+            match self.connect_impl(remote, server_name).await {
                 Ok(conn) => return Ok(compio::quic::h3::client::new(conn).await?),
                 Err(e) => err = Some(e),
             }
@@ -131,6 +130,10 @@ impl Connector {
         Err(err.unwrap_or_else(|| {
             Error::H3Client("failed to establish connection for HTTP/3 request".into())
         }))
+    }
+
+    async fn connect_impl(&self, remote: SocketAddr, server_name: &str) -> Result<Connection> {
+        Ok(self.endpoint.connect(remote, server_name)?.await?)
     }
 }
 
@@ -348,29 +351,4 @@ fn domain_as_uri((scheme, auth): Key) -> Uri {
         .path_and_query("/")
         .build()
         .expect("domain is valid Uri")
-}
-
-#[derive(Debug)]
-pub struct OnceCell<T>(async_once_cell::OnceCell<T>);
-
-impl<T> OnceCell<T> {
-    pub const fn new() -> Self {
-        Self(async_once_cell::OnceCell::new())
-    }
-
-    pub async fn get_or_try_init<E>(
-        &self,
-        init: impl Future<Output = std::result::Result<T, E>>,
-    ) -> std::result::Result<&T, E> {
-        self.0.get_or_try_init(init).await
-    }
-}
-
-impl<T: Clone> Clone for OnceCell<T> {
-    fn clone(&self) -> Self {
-        match self.0.get() {
-            None => Self::new(),
-            Some(v) => Self(async_once_cell::OnceCell::new_with(v.clone())),
-        }
-    }
 }
