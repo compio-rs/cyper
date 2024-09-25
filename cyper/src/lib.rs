@@ -23,6 +23,9 @@ mod util;
 #[cfg(feature = "http3")]
 mod http3;
 
+#[cfg(feature = "http3")]
+mod altsvc;
+
 /// The error type used in `compio-http`.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

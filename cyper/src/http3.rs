@@ -330,9 +330,9 @@ impl Client {
         pooled.send_request(req, url).await
     }
 
-    pub async fn request(&self, mut req: Request<Body>, url: &Url) -> Result<Response> {
+    pub async fn request(&self, mut req: Request<Body>, url: Url) -> Result<Response> {
         let pool_key = extract_domain(req.uri_mut())?;
-        self.clone().send_request(pool_key, req, url.clone()).await
+        self.clone().send_request(pool_key, req, url).await
     }
 }
 
