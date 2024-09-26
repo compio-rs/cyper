@@ -73,7 +73,7 @@ impl Client {
 
             #[cfg(feature = "http3-altsvc")]
             if url.port().is_none() && self.h3_hosts.find(host) {
-                if let Ok(value) = HeaderValue::from_bytes(host.as_bytes()) {
+                if let Ok(value) = http::HeaderValue::from_bytes(host.as_bytes()) {
                     request.headers_mut().insert("Alt-Used", value);
                 }
                 should_http3 = true;
