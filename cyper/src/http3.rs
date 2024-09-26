@@ -1,37 +1,41 @@
+#[cfg(feature = "once_cell_try")]
+use std::sync::OnceLock;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
-    net::SocketAddr,
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
     sync::{
-        mpsc::{Receiver, TryRecvError},
         Arc, Mutex,
+        mpsc::{Receiver, TryRecvError},
     },
     time::Instant,
 };
 
 use compio::{
     buf::bytes::Bytes,
-    net::ToSocketAddrsAsync,
+    net::{ToSocketAddrsAsync, UdpSocket},
     quic::{
-        h3::{client::SendRequest, OpenStreams},
-        ClientBuilder, ConnectError, Connecting, Connection, Endpoint,
+        ClientBuilder, ConnectError, Connecting, Connection, Endpoint, EndpointConfig,
+        h3::{OpenStreams, client::SendRequest},
     },
 };
 use futures_util::TryStreamExt;
 use http::{
-    uri::{Authority, Scheme},
     Request, Uri,
+    uri::{Authority, Scheme},
 };
 use http_body_util::BodyDataStream;
 use hyper::body::Buf;
+#[cfg(not(feature = "once_cell_try"))]
+use once_cell::sync::OnceCell as OnceLock;
+use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use url::Url;
 
 use crate::{Body, Error, Response, Result};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct DualEndpoint {
-    #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
-    v4end: Endpoint,
+    v4end: Option<Endpoint>,
     v6end: Endpoint,
 }
 
@@ -42,27 +46,48 @@ impl DualEndpoint {
             .with_alpn_protocols(&["h3"])
     }
 
-    async fn new() -> Result<Self> {
-        Ok(Self {
-            #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
-            v4end: Self::client_builder()
-                .bind((std::net::Ipv4Addr::UNSPECIFIED, 0))
-                .await?,
-            v6end: Self::client_builder()
-                .bind((std::net::Ipv6Addr::UNSPECIFIED, 0))
-                .await?,
-        })
+    fn new() -> Result<Self> {
+        let client_config = Self::client_builder().build();
+
+        let v6sock = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))?;
+        let dual_stack = v6sock.set_only_v6(false).is_ok();
+        v6sock.bind(&SockAddr::from(SocketAddrV6::new(
+            Ipv6Addr::UNSPECIFIED,
+            0,
+            0,
+            0,
+        )))?;
+        let v6sock = UdpSocket::from_std(v6sock.into())?;
+        let v6end = Endpoint::new(
+            v6sock,
+            EndpointConfig::default(),
+            None,
+            Some(client_config.clone()),
+        )?;
+        let v4end = if dual_stack {
+            None
+        } else {
+            let v4sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+            v4sock.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)))?;
+            let v4sock = UdpSocket::from_std(v4sock.into())?;
+            Some(Endpoint::new(
+                v4sock,
+                EndpointConfig::default(),
+                None,
+                Some(client_config),
+            )?)
+        };
+
+        Ok(Self { v4end, v6end })
     }
 
-    fn end(&self, _is_v4: bool) -> &Endpoint {
-        #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
-        {
-            if _is_v4 { &self.v4end } else { &self.v6end }
+    fn end(&self, is_v4: bool) -> &Endpoint {
+        if let Some(v4end) = &self.v4end {
+            if is_v4 {
+                return v4end;
+            }
         }
-        #[cfg(any(target_os = "linux", target_vendor = "apple"))]
-        {
-            &self.v6end
-        }
+        &self.v6end
     }
 
     fn connect(
@@ -77,14 +102,18 @@ impl DualEndpoint {
 
 #[derive(Debug, Clone)]
 struct Connector {
-    endpoint: DualEndpoint,
+    endpoint: Arc<OnceLock<DualEndpoint>>,
 }
 
 impl Connector {
-    pub async fn new() -> Result<Self> {
-        Ok(Self {
-            endpoint: DualEndpoint::new().await?,
-        })
+    pub fn new() -> Self {
+        Self {
+            endpoint: Arc::new(OnceLock::new()),
+        }
+    }
+
+    fn endpoint(&self) -> Result<&DualEndpoint> {
+        self.endpoint.get_or_try_init(DualEndpoint::new)
     }
 
     pub async fn connect(
@@ -98,9 +127,11 @@ impl Connector {
         let server_name = host.trim_start_matches('[').trim_end_matches(']');
         let port = dest.port_u16().unwrap_or(443);
 
+        let endpoint = self.endpoint()?;
+
         let mut err = None;
         for remote in (host, port).to_socket_addrs_async().await? {
-            match self.connect_impl(remote, server_name).await {
+            match Self::connect_impl(endpoint, remote, server_name).await {
                 Ok(conn) => return Ok(compio::quic::h3::client::new(conn).await?),
                 Err(e) => err = Some(e),
             }
@@ -110,8 +141,12 @@ impl Connector {
         }))
     }
 
-    async fn connect_impl(&self, remote: SocketAddr, server_name: &str) -> Result<Connection> {
-        Ok(self.endpoint.connect(remote, server_name)?.await?)
+    async fn connect_impl(
+        endpoint: &DualEndpoint,
+        remote: SocketAddr,
+        server_name: &str,
+    ) -> Result<Connection> {
+        Ok(endpoint.connect(remote, server_name)?.await?)
     }
 }
 
@@ -283,11 +318,11 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn new() -> Result<Self> {
-        Ok(Self {
+    pub fn new() -> Self {
+        Self {
             pool: Pool::new(),
-            connector: Connector::new().await?,
-        })
+            connector: Connector::new(),
+        }
     }
 
     async fn get_pooled_client(&mut self, key: Key) -> Result<PoolClient> {

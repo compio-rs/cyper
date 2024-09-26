@@ -14,7 +14,7 @@ use crate::{Body, IntoUrl, Request, RequestBuilder, Response, Result};
 pub struct Client {
     client: Arc<ClientInner>,
     #[cfg(feature = "http3")]
-    h3_client: Arc<async_once_cell::OnceCell<crate::http3::Client>>,
+    h3_client: crate::http3::Client,
     #[cfg(feature = "http3-altsvc")]
     h3_hosts: crate::altsvc::KnownHosts,
 }
@@ -31,13 +31,6 @@ impl Client {
     /// This is the same as `ClientBuilder::new()`.
     pub fn builder() -> ClientBuilder {
         ClientBuilder::new()
-    }
-
-    #[cfg(feature = "http3")]
-    async fn h3_client(&self) -> Result<&crate::http3::Client> {
-        self.h3_client
-            .get_or_try_init(crate::http3::Client::new())
-            .await
     }
 
     /// Send a request and wait for a response.
@@ -87,10 +80,7 @@ impl Client {
             }
 
             let res = if should_http3 {
-                self.h3_client()
-                    .await?
-                    .request(request, url.clone())
-                    .await?
+                self.h3_client.request(request, url.clone()).await?
             } else {
                 self.send_h1h2_request(request, &url).await?
             };
@@ -249,7 +239,7 @@ impl ClientBuilder {
         Client {
             client: Arc::new(client_ref),
             #[cfg(feature = "http3")]
-            h3_client: Arc::new(async_once_cell::OnceCell::new()),
+            h3_client: crate::http3::Client::new(),
             #[cfg(feature = "http3-altsvc")]
             h3_hosts: crate::altsvc::KnownHosts::default(),
         }

@@ -1,6 +1,7 @@
 //! A high level HTTP client based on compio.
 
 #![warn(missing_docs)]
+#![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 mod body;
