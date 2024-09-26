@@ -32,13 +32,16 @@ impl TlsBackend {
     /// Create [`TlsBackend`] with default rustls client config.
     #[cfg(feature = "rustls")]
     pub fn default_rustls() -> Self {
+        use std::sync::Arc;
+
         let mut config = rustls_platform_verifier::tls_config();
         config.alpn_protocols = if cfg!(feature = "http2") {
             vec![b"h2".into(), b"http/1.1".into()]
         } else {
             vec![b"http/1.1".into()]
         };
-        Self::Rustls(std::sync::Arc::new(config))
+        config.key_log = Arc::new(compio::rustls::KeyLogFile::new());
+        Self::Rustls(Arc::new(config))
     }
 
     #[cfg(any(feature = "native-tls", feature = "rustls"))]
