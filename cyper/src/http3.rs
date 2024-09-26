@@ -30,13 +30,7 @@ use crate::{Body, Error, Response, Result};
 
 #[derive(Debug, Clone)]
 struct DualEndpoint {
-    #[cfg(not(any(
-        target_os = "linux",
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "watchos",
-        target_os = "tvos"
-    )))]
+    #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
     v4end: Endpoint,
     v6end: Endpoint,
 }
@@ -50,13 +44,7 @@ impl DualEndpoint {
 
     async fn new() -> Result<Self> {
         Ok(Self {
-            #[cfg(not(any(
-                target_os = "linux",
-                target_os = "macos",
-                target_os = "ios",
-                target_os = "watchos",
-                target_os = "tvos"
-            )))]
+            #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
             v4end: Self::client_builder()
                 .bind((std::net::Ipv4Addr::UNSPECIFIED, 0))
                 .await?,
@@ -67,23 +55,11 @@ impl DualEndpoint {
     }
 
     fn end(&self, _is_v4: bool) -> &Endpoint {
-        #[cfg(not(any(
-            target_os = "linux",
-            target_os = "macos",
-            target_os = "ios",
-            target_os = "watchos",
-            target_os = "tvos"
-        )))]
+        #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
         {
             if _is_v4 { &self.v4end } else { &self.v6end }
         }
-        #[cfg(any(
-            target_os = "linux",
-            target_os = "macos",
-            target_os = "ios",
-            target_os = "watchos",
-            target_os = "tvos"
-        ))]
+        #[cfg(any(target_os = "linux", target_vendor = "apple"))]
         {
             &self.v6end
         }
