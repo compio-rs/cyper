@@ -43,7 +43,7 @@ struct DualEndpoint {
 
 impl DualEndpoint {
     fn client_builder() -> ClientBuilder<compio::rustls::ClientConfig> {
-        ClientBuilder::new_with_no_server_verification()
+        ClientBuilder::new_with_platform_verifier()
             .with_key_log()
             .with_alpn_protocols(&["h3"])
     }
