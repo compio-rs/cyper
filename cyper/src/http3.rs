@@ -5,8 +5,8 @@ use std::{
     fmt::Debug,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
     sync::{
-        Arc, Mutex,
         mpsc::{Receiver, TryRecvError},
+        Arc, Mutex,
     },
     time::Instant,
 };
@@ -15,14 +15,14 @@ use compio::{
     buf::bytes::Bytes,
     net::{ToSocketAddrsAsync, UdpSocket},
     quic::{
+        h3::{client::SendRequest, OpenStreams},
         ClientBuilder, ConnectError, Connecting, Connection, Endpoint, EndpointConfig,
-        h3::{OpenStreams, client::SendRequest},
     },
 };
 use futures_util::TryStreamExt;
 use http::{
-    Request, Uri,
     uri::{Authority, Scheme},
+    Request, Uri,
 };
 use http_body_util::BodyDataStream;
 use hyper::body::Buf;

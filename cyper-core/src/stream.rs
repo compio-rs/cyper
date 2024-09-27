@@ -185,12 +185,16 @@ impl Connection for HttpStream {
         let conn = Connected::new();
         let is_h2 = self
             .0
-            .0
+             .0
             .get_ref()
             .negotiated_alpn()
             .map(|alpn| alpn.as_slice() == b"h2")
             .unwrap_or_default();
-        if is_h2 { conn.negotiated_h2() } else { conn }
+        if is_h2 {
+            conn.negotiated_h2()
+        } else {
+            conn
+        }
     }
 }
 
