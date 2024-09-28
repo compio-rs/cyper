@@ -5,7 +5,7 @@ use std::{
 };
 
 use async_stream::try_stream;
-use compio::{bytes::Bytes, fs::File, io::AsyncReadAt, BufResult};
+use compio::{BufResult, bytes::Bytes, fs::File, io::AsyncReadAt};
 use futures_util::{Stream, StreamExt};
 use hyper::body::{Frame, Incoming, SizeHint};
 use send_wrapper::SendWrapper;

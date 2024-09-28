@@ -1,8 +1,8 @@
 //! Code from cyper_core.
 
 use hyper::{
-    header::{Entry, HeaderValue, OccupiedEntry},
     HeaderMap,
+    header::{Entry, HeaderValue, OccupiedEntry},
 };
 
 pub fn basic_auth<U, P>(username: U, password: Option<P>) -> HeaderValue

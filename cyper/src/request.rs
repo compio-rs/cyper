@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
 use hyper::{
-    header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
     HeaderMap, Method, Version,
+    header::{AUTHORIZATION, CONTENT_TYPE, HeaderName, HeaderValue},
 };
 use serde::Serialize;
 use url::Url;

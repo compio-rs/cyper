@@ -3,14 +3,14 @@ use std::{
     io,
     ops::DerefMut,
     pin::Pin,
-    task::{ready, Context, Poll},
+    task::{Context, Poll, ready},
 };
 
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
 use compio::tls::TlsStream;
 use compio::{
     buf::{BufResult, IoBuf, IoBufMut, IoVectoredBuf, IoVectoredBufMut},
-    io::{compat::AsyncStream, AsyncRead, AsyncWrite},
+    io::{AsyncRead, AsyncWrite, compat::AsyncStream},
     net::TcpStream,
 };
 use hyper::Uri;
@@ -185,16 +185,12 @@ impl Connection for HttpStream {
         let conn = Connected::new();
         let is_h2 = self
             .0
-             .0
+            .0
             .get_ref()
             .negotiated_alpn()
             .map(|alpn| alpn.as_slice() == b"h2")
             .unwrap_or_default();
-        if is_h2 {
-            conn.negotiated_h2()
-        } else {
-            conn
-        }
+        if is_h2 { conn.negotiated_h2() } else { conn }
     }
 }
 

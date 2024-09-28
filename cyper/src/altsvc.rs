@@ -119,13 +119,13 @@ impl KnownHosts {
             && (srv.authority.host.is_empty() || srv.authority.host == host)
             && srv.authority.port == 443
         {
-            self.map.lock().unwrap().insert(
-                host.to_string(),
-                AltHostEntry {
+            self.map
+                .lock()
+                .unwrap()
+                .insert(host.to_string(), AltHostEntry {
                     insert_time: Instant::now(),
                     max_age: srv.max_age.unwrap_or(86400), // 24 hours
-                },
-            );
+                });
             return true;
         }
         false
