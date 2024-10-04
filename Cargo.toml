@@ -1,5 +1,5 @@
 [workspace]
-members = ["cyper-core", "cyper"]
+members = ["cyper-core", "cyper", "cyper-axum"]
 resolver = "2"
 
 [workspace.package]
@@ -24,3 +24,6 @@ rustls-platform-verifier = "0.3.4"
 
 hyper = "1.4.1"
 hyper-util = "0.1.8"
+
+tower = "0.5.1"
+tower-service = "0.3.2"

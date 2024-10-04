@@ -1,0 +1,39 @@
+[package]
+name = "cyper-axum"
+version = "0.1.0"
+description = "axum adaptor based on cyper"
+categories = ["asynchronous", "network-programming"]
+keywords = ["async", "net"]
+edition = { workspace = true }
+authors = { workspace = true }
+readme = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+compio = { workspace = true, features = ["time"] }
+compio-log = "0.1.0"
+cyper-core = { workspace = true, features = ["server"] }
+
+axum-core = "0.4.5"
+axum = { version = "0.7.7", default-features = false }
+futures-channel = { workspace = true }
+futures-util = { workspace = true }
+hyper = { workspace = true, features = ["server"] }
+hyper-util = { workspace = true, features = ["service"] }
+send_wrapper = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+tower-service = { workspace = true }
+
+tokio = { version = "1", features = ["sync"] }
+
+
+[features]
+default = []
+enable_log = ["compio-log/enable_log"]
+
+nightly = ["compio/nightly", "cyper-core/nightly"]
