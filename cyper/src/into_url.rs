@@ -17,13 +17,13 @@ impl IntoUrl for Url {
     }
 }
 
-impl<'a> IntoUrl for &'a str {
+impl IntoUrl for &str {
     fn into_url(self) -> crate::Result<Url> {
         Ok(Url::parse(self)?)
     }
 }
 
-impl<'a> IntoUrl for &'a String {
+impl IntoUrl for &String {
     fn into_url(self) -> crate::Result<Url> {
         (&**self).into_url()
     }

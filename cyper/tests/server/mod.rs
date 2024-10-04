@@ -1,13 +1,11 @@
 use std::{
-    convert::Infallible,
     future::Future,
     net::{Ipv4Addr, SocketAddr},
 };
 
+use axum::{extract::Request, handler::HandlerWithoutStateExt, response::Response};
 use compio::net::TcpListener;
-use cyper_core::{CompioExecutor, HyperStream};
 use futures_channel::oneshot;
-use hyper::body::Incoming;
 
 pub struct Server {
     addr: SocketAddr,
@@ -30,31 +28,21 @@ impl Drop for Server {
 
 pub async fn http<F, Fut>(func: F) -> Server
 where
-    F: Fn(http::Request<Incoming>) -> Fut + Clone + Send + 'static,
-    Fut: Future<Output = http::Response<String>> + Send + 'static,
+    F: Fn(Request) -> Fut + Clone + Send + 'static,
+    Fut: Future<Output = Response<String>> + Send + 'static,
 {
-    let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
     let listener = TcpListener::bind(&(Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
+
     let srv = async move {
-        let builder = hyper_util::server::conn::auto::Builder::new(CompioExecutor);
-        while let Ok(None) = shutdown_rx.try_recv() {
-            let (stream, _) = listener.accept().await.unwrap();
-            builder
-                .serve_connection(
-                    HyperStream::new(stream),
-                    hyper::service::service_fn({
-                        let func = func.clone();
-                        move |req| {
-                            let fut = func(req);
-                            async move { Ok::<_, Infallible>(fut.await) }
-                        }
-                    }),
-                )
-                .await
-                .unwrap();
-        }
+        cyper_axum::serve(listener, func.into_service())
+            .with_graceful_shutdown(async move {
+                shutdown_rx.await.ok();
+            })
+            .await
+            .unwrap()
     };
 
     compio::runtime::spawn(srv).detach();

@@ -44,15 +44,16 @@ url = "2"
 
 [dev-dependencies]
 compio = { workspace = true, features = ["macros"] }
-cyper-core = { workspace = true, features = ["server"] }
+cyper-axum = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 
+axum = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 cookie = "0.18"
 futures-channel = { workspace = true }
-hyper = { workspace = true, features = ["server"] }
 serde = { version = "1", features = ["derive"] }
 time = "0.3"
+tower = { workspace = true }
 
 [features]
 default = ["native-tls"]
@@ -81,7 +82,7 @@ all = [
 ]
 
 once_cell_try = ["compio/once_cell_try"]
-nightly = ["once_cell_try", "cyper-core/nightly"]
+nightly = ["once_cell_try", "cyper-core/nightly", "cyper-axum/nightly"]
 
 [[test]]
 name = "cookie"

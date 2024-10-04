@@ -1,5 +1,5 @@
 [workspace]
-members = ["cyper-core", "cyper"]
+members = ["cyper-core", "cyper", "cyper-axum"]
 resolver = "2"
 
 [workspace.package]
@@ -12,7 +12,8 @@ repository = "https://github.com/compio-rs/cyper"
 [workspace.dependencies]
 compio = "0.12.0"
 compio-quic = "0.1.0"
-cyper-core = { path = "./cyper-core", default-features = false, version = "0.1.1" }
+cyper-core = { path = "./cyper-core", default-features = false, version = "0.1.2" }
+cyper-axum = { path = "./cyper-axum", default-features = false, version = "0.1.0" }
 
 cfg-if = "1.0.0"
 futures-channel = "0.3.29"
@@ -24,3 +25,8 @@ rustls-platform-verifier = "0.3.4"
 
 hyper = "1.4.1"
 hyper-util = "0.1.8"
+
+tower = "0.5.1"
+tower-service = "0.3.2"
+
+axum = { version = "0.7.7", default-features = false }

@@ -202,6 +202,17 @@ impl<S> HyperStream<S> {
     pub fn new(s: S) -> Self {
         Self(SendWrapper::new(AsyncStream::new(s)))
     }
+
+    /// Get the reference of the inner stream.
+    pub fn get_ref(&self) -> &S {
+        self.0.get_ref()
+    }
+}
+
+impl<S> std::fmt::Debug for HyperStream<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HyperStream").finish_non_exhaustive()
+    }
 }
 
 impl<S: AsyncRead + Unpin + 'static> hyper::rt::Read for HyperStream<S> {
