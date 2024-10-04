@@ -64,6 +64,7 @@ impl HttpStreamInner {
     fn negotiated_alpn(&self) -> Option<Cow<[u8]>> {
         match self {
             Self::Tcp(_) => None,
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
             Self::Tls(s) => s.negotiated_alpn(),
         }
     }
