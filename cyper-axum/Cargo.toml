@@ -20,12 +20,12 @@ compio-log = "0.1.0"
 cyper-core = { workspace = true, features = ["server"] }
 
 axum-core = "0.4.5"
-axum = { version = "0.7.7", default-features = false }
+axum = { workspace = true, default-features = false }
 futures-channel = { workspace = true }
 futures-util = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
 hyper-util = { workspace = true, features = ["service"] }
-send_wrapper = { workspace = true }
+send_wrapper = { workspace = true, features = ["futures"] }
 tower = { workspace = true, features = ["util"] }
 tower-service = { workspace = true }
 

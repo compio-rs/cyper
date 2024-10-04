@@ -99,8 +99,7 @@ use tower_service::Service;
 pub fn serve<M, S>(tcp_listener: TcpListener, make_service: M) -> Serve<M, S>
 where
     M: for<'a> Service<IncomingStream<'a>, Error = Infallible, Response = S>,
-    S: Service<Request, Response = Response, Error = Infallible> + Clone + Send + 'static,
-    S::Future: Send,
+    S: Service<Request, Response = Response, Error = Infallible> + Clone + 'static,
 {
     Serve {
         tcp_listener,
@@ -142,7 +141,7 @@ impl<M, S> Serve<M, S> {
     /// ```
     pub fn with_graceful_shutdown<F>(self, signal: F) -> WithGracefulShutdown<M, S, F>
     where
-        F: Future<Output = ()> + Send + 'static,
+        F: Future<Output = ()> + 'static,
     {
         WithGracefulShutdown {
             tcp_listener: self.tcp_listener,
@@ -178,10 +177,8 @@ where
 
 impl<M, S> IntoFuture for Serve<M, S>
 where
-    M: for<'a> Service<IncomingStream<'a>, Error = Infallible, Response = S> + Send + 'static,
-    for<'a> <M as Service<IncomingStream<'a>>>::Future: Send,
-    S: Service<Request, Response = Response, Error = Infallible> + Clone + Send + 'static,
-    S::Future: Send,
+    M: for<'a> Service<IncomingStream<'a>, Error = Infallible, Response = S> + 'static,
+    S: Service<Request, Response = Response, Error = Infallible> + Clone + 'static,
 {
     type IntoFuture = ServeFuture;
     type Output = io::Result<()>;
@@ -220,7 +217,10 @@ where
                 compio::runtime::spawn(async move {
                     match Builder::new(CompioExecutor)
                         // upgrades needed for websockets
-                        .serve_connection_with_upgrades(tcp_stream, hyper_service)
+                        .serve_connection_with_upgrades(
+                            tcp_stream,
+                            ServiceSendWrapper::new(hyper_service),
+                        )
                         .await
                     {
                         Ok(()) => {}
@@ -281,11 +281,9 @@ where
 
 impl<M, S, F> IntoFuture for WithGracefulShutdown<M, S, F>
 where
-    M: for<'a> Service<IncomingStream<'a>, Error = Infallible, Response = S> + Send + 'static,
-    for<'a> <M as Service<IncomingStream<'a>>>::Future: Send,
-    S: Service<Request, Response = Response, Error = Infallible> + Clone + Send + 'static,
-    S::Future: Send,
-    F: Future<Output = ()> + Send + 'static,
+    M: for<'a> Service<IncomingStream<'a>, Error = Infallible, Response = S> + 'static,
+    S: Service<Request, Response = Response, Error = Infallible> + Clone + 'static,
+    F: Future<Output = ()> + 'static,
 {
     type IntoFuture = ServeFuture;
     type Output = io::Result<()>;
@@ -349,7 +347,10 @@ where
 
                 compio::runtime::spawn(async move {
                     let builder = Builder::new(CompioExecutor);
-                    let conn = builder.serve_connection_with_upgrades(tcp_stream, hyper_service);
+                    let conn = builder.serve_connection_with_upgrades(
+                        tcp_stream,
+                        ServiceSendWrapper::new(hyper_service),
+                    );
                     pin_mut!(conn);
 
                     let signal_closed = signal_tx.closed().fuse();
@@ -512,5 +513,23 @@ impl Service<IncomingStream<'_>> for Router<()> {
         // call `Router::with_state` such that everything is turned into `Route` eagerly
         // rather than doing that per request
         std::future::ready(Ok(self.clone().with_state(())))
+    }
+}
+
+struct ServiceSendWrapper<T>(SendWrapper<T>);
+
+impl<T> ServiceSendWrapper<T> {
+    pub fn new(v: T) -> Self {
+        Self(SendWrapper::new(v))
+    }
+}
+
+impl<R, T: hyper::service::Service<R>> hyper::service::Service<R> for ServiceSendWrapper<T> {
+    type Error = T::Error;
+    type Future = SendWrapper<T::Future>;
+    type Response = T::Response;
+
+    fn call(&self, req: R) -> Self::Future {
+        SendWrapper::new(self.0.call(req))
     }
 }
