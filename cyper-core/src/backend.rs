@@ -34,7 +34,10 @@ impl TlsBackend {
     pub fn default_rustls() -> Self {
         use std::sync::Arc;
 
-        let mut config = rustls_platform_verifier::tls_config();
+        use compio::rustls::ClientConfig;
+        use rustls_platform_verifier::ConfigVerifierExt;
+
+        let mut config = ClientConfig::with_platform_verifier();
         config.alpn_protocols = if cfg!(feature = "http2") {
             vec![b"h2".into(), b"http/1.1".into()]
         } else {
