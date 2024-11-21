@@ -1,6 +1,6 @@
 [package]
 name = "cyper-axum"
-version = "0.1.0"
+version = "0.2.0"
 description = "axum adaptor based on cyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
