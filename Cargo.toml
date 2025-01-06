@@ -29,4 +29,4 @@ hyper-util = "0.1.8"
 tower = "0.5.1"
 tower-service = "0.3.2"
 
-axum = { version = "0.7.7", default-features = false }
+axum = { version = "0.8.1", default-features = false }
