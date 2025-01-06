@@ -19,7 +19,7 @@ compio = { workspace = true, features = ["time"] }
 compio-log = "0.1.0"
 cyper-core = { workspace = true, features = ["server"] }
 
-axum-core = "0.4.5"
+axum-core = "0.5.0"
 axum = { workspace = true, default-features = false }
 futures-channel = { workspace = true }
 futures-util = { workspace = true }
