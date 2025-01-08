@@ -1,3 +1,6 @@
+use axum::{extract::Request, response::IntoResponse};
+use http::header::SET_COOKIE;
+
 mod server;
 
 #[compio::test]
@@ -16,7 +19,7 @@ async fn cookie_response_accessor() {
             .header("Set-Cookie", "httponly=1; HttpOnly")
             .header("Set-Cookie", "samesitelax=1; SameSite=Lax")
             .header("Set-Cookie", "samesitestrict=1; SameSite=Strict")
-            .body(Default::default())
+            .body(String::new())
             .unwrap()
     })
     .await;
@@ -75,14 +78,11 @@ async fn cookie_response_accessor() {
 
 #[compio::test]
 async fn cookie_store_simple() {
-    let server = server::http(move |req| async move {
+    let server = server::http(move |req: Request| async move {
         if req.uri() == "/2" {
             assert_eq!(req.headers()["cookie"], "key=val");
         }
-        http::Response::builder()
-            .header("Set-Cookie", "key=val; HttpOnly")
-            .body(Default::default())
-            .unwrap()
+        [(SET_COOKIE, "key=val; HttpOnly")]
     })
     .await;
 
@@ -97,18 +97,12 @@ async fn cookie_store_simple() {
 
 #[compio::test]
 async fn cookie_store_overwrite_existing() {
-    let server = server::http(move |req| async move {
+    let server = server::http(move |req: Request| async move {
         if req.uri() == "/" {
-            http::Response::builder()
-                .header("Set-Cookie", "key=val")
-                .body(Default::default())
-                .unwrap()
+            [(SET_COOKIE, "key=val")].into_response()
         } else if req.uri() == "/2" {
             assert_eq!(req.headers()["cookie"], "key=val");
-            http::Response::builder()
-                .header("Set-Cookie", "key=val2")
-                .body(Default::default())
-                .unwrap()
+            [(SET_COOKIE, "key=val2")].into_response()
         } else {
             assert_eq!(req.uri(), "/3");
             assert_eq!(req.headers()["cookie"], "key=val2");
@@ -131,12 +125,9 @@ async fn cookie_store_overwrite_existing() {
 
 #[compio::test]
 async fn cookie_store_max_age() {
-    let server = server::http(move |req| async move {
+    let server = server::http(move |req: Request| async move {
         assert_eq!(req.headers().get("cookie"), None);
-        http::Response::builder()
-            .header("Set-Cookie", "key=val; Max-Age=0")
-            .body(Default::default())
-            .unwrap()
+        [(SET_COOKIE, "key=val; Max-Age=0")]
     })
     .await;
 
@@ -148,15 +139,9 @@ async fn cookie_store_max_age() {
 
 #[compio::test]
 async fn cookie_store_expires() {
-    let server = server::http(move |req| async move {
+    let server = server::http(move |req: Request| async move {
         assert_eq!(req.headers().get("cookie"), None);
-        http::Response::builder()
-            .header(
-                "Set-Cookie",
-                "key=val; Expires=Wed, 21 Oct 2015 07:28:00 GMT",
-            )
-            .body(Default::default())
-            .unwrap()
+        [(SET_COOKIE, "key=val; Expires=Wed, 21 Oct 2015 07:28:00 GMT")]
     })
     .await;
 
@@ -169,13 +154,10 @@ async fn cookie_store_expires() {
 
 #[compio::test]
 async fn cookie_store_path() {
-    let server = server::http(move |req| async move {
+    let server = server::http(move |req: Request| async move {
         if req.uri() == "/" {
             assert_eq!(req.headers().get("cookie"), None);
-            http::Response::builder()
-                .header("Set-Cookie", "key=val; Path=/subpath")
-                .body(Default::default())
-                .unwrap()
+            [(SET_COOKIE, "key=val; Path=/subpath")].into_response()
         } else {
             assert_eq!(req.uri(), "/subpath");
             assert_eq!(req.headers()["cookie"], "key=val");

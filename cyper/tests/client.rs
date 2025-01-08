@@ -9,7 +9,7 @@ use http::header::CONTENT_TYPE;
 
 #[compio::test]
 async fn response_text() {
-    let server = server::http(move |_req| async { http::Response::new("Hello".into()) }).await;
+    let server = server::http(move |_req| async { "Hello" }).await;
 
     let client = Client::new();
 
@@ -26,7 +26,7 @@ async fn response_text() {
 
 #[compio::test]
 async fn response_bytes() {
-    let server = server::http(move |_req| async { http::Response::new("Hello".into()) }).await;
+    let server = server::http(move |_req| async { "Hello" }).await;
 
     let client = Client::new();
 
@@ -44,7 +44,7 @@ async fn response_bytes() {
 #[compio::test]
 #[cfg(feature = "json")]
 async fn response_json() {
-    let server = server::http(move |_req| async { http::Response::new("\"Hello\"".into()) }).await;
+    let server = server::http(move |_req| async { "\"Hello\"" }).await;
 
     let client = Client::new();
 

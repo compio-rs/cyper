@@ -1,9 +1,6 @@
-use std::{
-    future::Future,
-    net::{Ipv4Addr, SocketAddr},
-};
+use std::net::{Ipv4Addr, SocketAddr};
 
-use axum::{extract::Request, handler::HandlerWithoutStateExt, response::Response};
+use axum::{extract::Request, handler::HandlerWithoutStateExt};
 use compio::net::TcpListener;
 use futures_channel::oneshot;
 
@@ -26,10 +23,10 @@ impl Drop for Server {
     }
 }
 
-pub async fn http<F, Fut>(func: F) -> Server
+pub async fn http<F, M>(func: F) -> Server
 where
-    F: Fn(Request) -> Fut + Clone + Send + 'static,
-    Fut: Future<Output = Response<String>> + Send + 'static,
+    F: axum::handler::Handler<(M, Request), ()>,
+    M: 'static,
 {
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
