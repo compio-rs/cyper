@@ -46,7 +46,7 @@ impl Client {
         #[cfg(feature = "cookies")]
         {
             if headers.get(http::header::COOKIE).is_none() {
-                if let Some(cookie_store) = self.cookie_value(&url) {
+                if let Some(cookie_store) = self.cookie_value_impl(&url) {
                     headers.insert(http::header::COOKIE, cookie_store);
                 }
             }
@@ -134,8 +134,15 @@ impl Client {
         Ok(Response::new(res, url.clone()))
     }
 
+    /// Get stored cookie value for specified URL. If the URL is valid while no
+    /// value found, it returns `Ok(None)`.
     #[cfg(feature = "cookies")]
-    pub fn cookie_value(&self, url: &Url) -> Option<HeaderValue> {
+    pub fn cookie_value<U: IntoUrl>(&self, url: U) -> Result<Option<HeaderValue>> {
+        Ok(self.cookie_value_impl(&url.into_url()?))
+    }
+
+    #[cfg(feature = "cookies")]
+    fn cookie_value_impl(&self, url: &Url) -> Option<HeaderValue> {
         let cookie_store = self.client.cookies.as_ref()?.read().unwrap();
         let value = cookie_store
             .get_request_values(url)

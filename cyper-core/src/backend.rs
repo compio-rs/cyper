@@ -50,8 +50,7 @@ impl TlsBackend {
     #[cfg(any(feature = "native-tls", feature = "rustls"))]
     pub(crate) fn create_connector(&self) -> io::Result<TlsConnector> {
         match self {
-            Self::None => Err(io::Error::new(
-                io::ErrorKind::Other,
+            Self::None => Err(io::Error::other(
                 "could not create TLS connector without TLS backend",
             )),
             #[cfg(feature = "native-tls")]
@@ -63,7 +62,7 @@ impl TlsBackend {
                         &["http/1.1"]
                     })
                     .build()
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
+                    .map_err(io::Error::other)?,
             )),
             #[cfg(feature = "rustls")]
             Self::Rustls(config) => Ok(TlsConnector::from(config.clone())),
