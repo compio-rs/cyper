@@ -10,10 +10,10 @@ license = "MIT"
 repository = "https://github.com/compio-rs/cyper"
 
 [workspace.dependencies]
-compio = "0.13.0"
-compio-quic = "0.2.0"
-cyper-core = { path = "./cyper-core", default-features = false, version = "0.2.0" }
-cyper-axum = { path = "./cyper-axum", default-features = false, version = "0.2.0" }
+compio = "0.14.0"
+compio-quic = "0.3.0"
+cyper-core = { path = "./cyper-core", default-features = false, version = "0.3.0" }
+cyper-axum = { path = "./cyper-axum", default-features = false, version = "0.3.0" }
 
 cfg-if = "1.0.0"
 futures-channel = "0.3.29"
