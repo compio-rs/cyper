@@ -135,7 +135,7 @@ impl Client {
     }
 
     #[cfg(feature = "cookies")]
-    fn cookie_value(&self, url: &Url) -> Option<HeaderValue> {
+    pub fn cookie_value(&self, url: &Url) -> Option<HeaderValue> {
         let cookie_store = self.client.cookies.as_ref()?.read().unwrap();
         let value = cookie_store
             .get_request_values(url)
