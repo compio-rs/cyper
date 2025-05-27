@@ -22,10 +22,7 @@ jobs:
       matrix:
         toolchain: ["nightly", "beta"]
         setup:
-          - os: "ubuntu-20.04"
           - os: "ubuntu-22.04"
-          - os: "ubuntu-20.04"
-            no_default_features: true
           - os: "ubuntu-22.04"
             no_default_features: true
           - os: "windows-latest"
