@@ -20,6 +20,7 @@ use compio::{
     },
 };
 use futures_util::TryStreamExt;
+use h3::error::ConnectionError;
 use http::{
     Request, Uri,
     uri::{Authority, Scheme},
@@ -202,13 +203,13 @@ impl Debug for PoolClient {
 #[derive(Debug)]
 struct PoolConnection {
     // This receives errors from polling h3 driver.
-    close_rx: Receiver<h3::Error>,
+    close_rx: Receiver<ConnectionError>,
     client: PoolClient,
     idle_timeout: Instant,
 }
 
 impl PoolConnection {
-    pub fn new(client: PoolClient, close_rx: Receiver<h3::Error>) -> Self {
+    pub fn new(client: PoolClient, close_rx: Receiver<ConnectionError>) -> Self {
         Self {
             close_rx,
             client,
@@ -291,9 +292,8 @@ impl Pool {
     ) -> PoolClient {
         let (close_tx, close_rx) = std::sync::mpsc::channel();
         compio::runtime::spawn(async move {
-            if let Err(e) = driver.wait_idle().await {
-                close_tx.send(e).ok();
-            }
+            let e = driver.wait_idle().await;
+            close_tx.send(e).ok();
         })
         .detach();
 

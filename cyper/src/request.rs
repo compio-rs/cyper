@@ -181,7 +181,7 @@ impl RequestBuilder {
 
     /// Enable HTTP bearer authentication.
     pub fn bearer_auth<T: Display>(self, token: T) -> Result<RequestBuilder> {
-        let header_value = format!("Bearer {}", token);
+        let header_value = format!("Bearer {token}");
         self.header_sensitive(AUTHORIZATION, header_value, true)
     }
 

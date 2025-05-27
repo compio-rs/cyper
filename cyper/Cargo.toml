@@ -24,7 +24,7 @@ cyper-core = { workspace = true, features = ["client"] }
 http = "1.0.0"
 hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true }
-h3 = { version = "0.0.6", optional = true }
+h3 = { version = "0.0.8", optional = true }
 
 async-stream = "0.3"
 base64 = "0.22"
