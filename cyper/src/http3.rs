@@ -41,14 +41,14 @@ struct DualEndpoint {
 }
 
 impl DualEndpoint {
-    fn client_builder() -> ClientBuilder<compio::rustls::ClientConfig> {
-        ClientBuilder::new_with_platform_verifier()
+    fn client_builder() -> Result<ClientBuilder<compio::rustls::ClientConfig>> {
+        Ok(ClientBuilder::new_with_platform_verifier()?
             .with_key_log()
-            .with_alpn_protocols(&["h3"])
+            .with_alpn_protocols(&["h3"]))
     }
 
     fn new() -> Result<Self> {
-        let client_config = Self::client_builder().build();
+        let client_config = Self::client_builder()?.build();
 
         let v6sock = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))?;
         let dual_stack = v6sock.set_only_v6(false).is_ok();

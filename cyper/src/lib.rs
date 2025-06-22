@@ -59,11 +59,15 @@ pub enum Error {
     #[cfg(feature = "json")]
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
+    /// Rustls error.
+    #[cfg(feature = "http3")]
+    #[error("`rustls` error: {0}")]
+    Rustls(#[from] compio::rustls::Error),
     /// H3 connection error.
     #[cfg(feature = "http3")]
     #[error("`h3` connection error: {0}")]
     H3Connection(#[from] h3::error::ConnectionError),
-    /// H3 stream error
+    /// H3 stream error.
     #[cfg(feature = "http3")]
     #[error("`h3` stream error: {0}")]
     H3Stream(#[from] h3::error::StreamError),

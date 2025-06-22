@@ -270,14 +270,14 @@ impl ClientBuilder {
     /// Force using the Rustls TLS backend.
     #[cfg(feature = "rustls")]
     pub fn use_rustls_default(mut self) -> Self {
-        self.tls = TlsBackend::default_rustls();
+        self.tls = TlsBackend::Rustls(None);
         self
     }
 
     /// Force using the Rustls TLS backend.
     #[cfg(feature = "rustls")]
     pub fn use_rustls(mut self, config: std::sync::Arc<compio::tls::rustls::ClientConfig>) -> Self {
-        self.tls = TlsBackend::Rustls(config);
+        self.tls = TlsBackend::Rustls(Some(config));
         self
     }
 
