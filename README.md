@@ -15,8 +15,8 @@ This project references code from [reqwest](https://github.com/seanmonstar/reqwe
 Add `compio` and `cyper` as dependency:
 
 ```
-compio = { version = "0.12.0", features = ["macros"] }
-cyper = "0.1.0"
+compio = { version = "0.15.0", features = ["macros"] }
+cyper = "0.3.2"
 ```
 
 Then we can start a simple HTTP request:
