@@ -222,7 +222,7 @@ impl Response {
     ///
     /// Note that invalid 'Set-Cookie' headers will be ignored.
     #[cfg(feature = "cookies")]
-    pub fn cookies(&self) -> impl Iterator<Item = RawCookie> {
+    pub fn cookies(&self) -> impl Iterator<Item = RawCookie<'_>> {
         self.res
             .headers()
             .get_all(http::header::SET_COOKIE)
