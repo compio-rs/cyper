@@ -21,7 +21,10 @@ use std::{
 
 use axum::{Router, handler::HandlerService, routing::MethodRouter};
 use axum_core::{body::Body, extract::Request, response::Response};
-use compio::net::{TcpListener, TcpStream};
+use compio::{
+    io::{AsyncRead, AsyncWrite},
+    net::{TcpListener, TcpStream, UnixListener, UnixStream},
+};
 use compio_log::*;
 use cyper_core::{CompioExecutor, HyperStream};
 use futures_util::{FutureExt, pin_mut};
@@ -32,6 +35,79 @@ use send_wrapper::SendWrapper;
 use tokio::sync::watch;
 use tower::ServiceExt as _;
 use tower_service::Service;
+
+/// Types that can listen for connections.
+pub trait Listener: 'static {
+    /// The listener's IO type.
+    type Io: AsyncRead + AsyncWrite + Unpin + 'static;
+
+    /// The listener's address type.
+    type Addr;
+
+    /// Accept a new incoming connection to this listener.
+    ///
+    /// If the underlying accept call can return an error, this function must
+    /// take care of logging and retrying.
+    fn accept(&mut self) -> impl Future<Output = (Self::Io, Self::Addr)>;
+
+    /// Returns the local address that this listener is bound to.
+    fn local_addr(&self) -> io::Result<Self::Addr>;
+}
+
+impl Listener for TcpListener {
+    type Addr = SocketAddr;
+    type Io = TcpStream;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            match Self::accept(self).await {
+                Ok(tup) => return tup,
+                Err(e) => handle_accept_error(e).await,
+            }
+        }
+    }
+
+    fn local_addr(&self) -> io::Result<Self::Addr> {
+        Self::local_addr(self)
+    }
+}
+
+impl Listener for UnixListener {
+    type Addr = socket2::SockAddr;
+    type Io = UnixStream;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            match Self::accept(self).await {
+                Ok(tup) => return tup,
+                Err(e) => handle_accept_error(e).await,
+            }
+        }
+    }
+
+    fn local_addr(&self) -> io::Result<Self::Addr> {
+        Self::local_addr(self)
+    }
+}
+
+async fn handle_accept_error(e: io::Error) {
+    if is_connection_error(&e) {
+        return;
+    }
+
+    error!("accept error: {e}");
+
+    compio::time::sleep(Duration::from_secs(1)).await;
+}
+
+fn is_connection_error(e: &io::Error) -> bool {
+    matches!(
+        e.kind(),
+        io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::ConnectionReset
+    )
+}
 
 /// Serve the service with the supplied listener.
 ///
@@ -99,13 +175,14 @@ use tower_service::Service;
 /// [`Handler`]: crate::handler::Handler
 /// [`HandlerWithoutStateExt::into_make_service_with_connect_info`]: crate::handler::HandlerWithoutStateExt::into_make_service_with_connect_info
 /// [`HandlerService::into_make_service_with_connect_info`]: crate::handler::HandlerService::into_make_service_with_connect_info
-pub fn serve<M, S>(tcp_listener: TcpListener, make_service: M) -> Serve<M, S>
+pub fn serve<L, M, S>(listener: L, make_service: M) -> Serve<L, M, S>
 where
-    M: for<'a> Service<IncomingStream<'a>, Error = Infallible, Response = S>,
+    L: Listener,
+    M: for<'a> Service<IncomingStream<'a, L>, Error = Infallible, Response = S>,
     S: Service<Request, Response = Response, Error = Infallible> + Clone + 'static,
 {
     Serve {
-        tcp_listener,
+        listener,
         make_service,
         _marker: PhantomData,
     }
@@ -113,13 +190,13 @@ where
 
 /// Future returned by [`serve`].
 #[must_use = "futures must be awaited or polled"]
-pub struct Serve<M, S> {
-    tcp_listener: TcpListener,
+pub struct Serve<L, M, S> {
+    listener: L,
     make_service: M,
     _marker: PhantomData<S>,
 }
 
-impl<M, S> Serve<M, S> {
+impl<L, M, S> Serve<L, M, S> {
     /// Prepares a server to handle graceful shutdown when the provided future
     /// completes.
     ///
@@ -142,45 +219,52 @@ impl<M, S> Serve<M, S> {
     ///     // ...
     /// }
     /// ```
-    pub fn with_graceful_shutdown<F>(self, signal: F) -> WithGracefulShutdown<M, S, F>
+    pub fn with_graceful_shutdown<F>(self, signal: F) -> WithGracefulShutdown<L, M, S, F>
     where
         F: Future<Output = ()> + 'static,
     {
         WithGracefulShutdown {
-            tcp_listener: self.tcp_listener,
+            listener: self.listener,
             make_service: self.make_service,
             signal,
             _marker: PhantomData,
         }
     }
+}
 
+impl<L, M, S> Serve<L, M, S>
+where
+    L: Listener,
+{
     /// Returns the local address this server is bound to.
-    pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.tcp_listener.local_addr()
+    pub fn local_addr(&self) -> io::Result<L::Addr> {
+        self.listener.local_addr()
     }
 }
 
-impl<M, S> Debug for Serve<M, S>
+impl<L, M, S> Debug for Serve<L, M, S>
 where
+    L: Debug + 'static,
     M: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self {
-            tcp_listener,
+            listener,
             make_service,
             _marker: _,
         } = self;
 
         f.debug_struct("Serve")
-            .field("tcp_listener", tcp_listener)
+            .field("listener", listener)
             .field("make_service", make_service)
             .finish()
     }
 }
 
-impl<M, S> IntoFuture for Serve<M, S>
+impl<L, M, S> IntoFuture for Serve<L, M, S>
 where
-    M: for<'a> Service<IncomingStream<'a>, Error = Infallible, Response = S> + 'static,
+    L: Listener,
+    M: for<'a> Service<IncomingStream<'a, L>, Error = Infallible, Response = S> + 'static,
     S: Service<Request, Response = Response, Error = Infallible> + Clone + 'static,
 {
     type IntoFuture = ServeFuture;
@@ -189,18 +273,15 @@ where
     fn into_future(self) -> Self::IntoFuture {
         ServeFuture(Box::pin(SendWrapper::new(async move {
             let Self {
-                tcp_listener,
+                mut listener,
                 mut make_service,
                 _marker: _,
             } = self;
 
             loop {
-                let (tcp_stream, remote_addr) = match tcp_accept(&tcp_listener).await {
-                    Some(conn) => conn,
-                    None => continue,
-                };
+                let (io, remote_addr) = listener.accept().await;
 
-                let tcp_stream = HyperStream::new(tcp_stream);
+                let io = HyperStream::new(io);
 
                 poll_fn(|cx| make_service.poll_ready(cx))
                     .await
@@ -208,7 +289,7 @@ where
 
                 let tower_service = make_service
                     .call(IncomingStream {
-                        tcp_stream: &tcp_stream,
+                        io: &io,
                         remote_addr,
                     })
                     .await
@@ -220,10 +301,7 @@ where
                 compio::runtime::spawn(async move {
                     match Builder::new(CompioExecutor)
                         // upgrades needed for websockets
-                        .serve_connection_with_upgrades(
-                            tcp_stream,
-                            ServiceSendWrapper::new(hyper_service),
-                        )
+                        .serve_connection_with_upgrades(io, ServiceSendWrapper::new(hyper_service))
                         .await
                     {
                         Ok(()) => {}
@@ -246,45 +324,48 @@ where
 
 /// Serve future with graceful shutdown enabled.
 #[must_use = "futures must be awaited or polled"]
-pub struct WithGracefulShutdown<M, S, F> {
-    tcp_listener: TcpListener,
+pub struct WithGracefulShutdown<L, M, S, F> {
+    listener: L,
     make_service: M,
     signal: F,
     _marker: PhantomData<S>,
 }
 
-impl<M, S, F> WithGracefulShutdown<M, S, F> {
+impl<L: Listener, M, S, F> WithGracefulShutdown<L, M, S, F> {
     /// Returns the local address this server is bound to.
-    pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.tcp_listener.local_addr()
+    pub fn local_addr(&self) -> io::Result<L::Addr> {
+        self.listener.local_addr()
     }
 }
 
-impl<M, S, F> Debug for WithGracefulShutdown<M, S, F>
+impl<L, M, S, F> Debug for WithGracefulShutdown<L, M, S, F>
 where
+    L: Debug + 'static,
     M: Debug,
     S: Debug,
     F: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self {
-            tcp_listener,
+            listener,
             make_service,
             signal,
             _marker: _,
         } = self;
 
         f.debug_struct("WithGracefulShutdown")
-            .field("tcp_listener", tcp_listener)
+            .field("listener", listener)
             .field("make_service", make_service)
             .field("signal", signal)
             .finish()
     }
 }
 
-impl<M, S, F> IntoFuture for WithGracefulShutdown<M, S, F>
+impl<L, M, S, F> IntoFuture for WithGracefulShutdown<L, M, S, F>
 where
-    M: for<'a> Service<IncomingStream<'a>, Error = Infallible, Response = S> + 'static,
+    L: Listener,
+    L::Addr: Debug,
+    M: for<'a> Service<IncomingStream<'a, L>, Error = Infallible, Response = S> + 'static,
     S: Service<Request, Response = Response, Error = Infallible> + Clone + 'static,
     F: Future<Output = ()> + 'static,
 {
@@ -293,7 +374,7 @@ where
 
     fn into_future(self) -> Self::IntoFuture {
         let Self {
-            tcp_listener,
+            mut listener,
             mut make_service,
             signal,
             _marker: _,
@@ -312,12 +393,9 @@ where
 
         ServeFuture(Box::pin(SendWrapper::new(async move {
             loop {
-                let (tcp_stream, remote_addr) = futures_util::select! {
-                    conn = tcp_accept(&tcp_listener).fuse() => {
-                        match conn {
-                            Some(conn) => conn,
-                            None => continue,
-                        }
+                let (io, remote_addr) = futures_util::select! {
+                    conn = listener.accept().fuse() => {
+                        conn
                     }
                     _ = signal_tx.closed().fuse() => {
                         trace!("signal received, not accepting new connections");
@@ -325,9 +403,9 @@ where
                     }
                 };
 
-                let tcp_stream = HyperStream::new(tcp_stream);
+                let io = HyperStream::new(io);
 
-                trace!("connection {remote_addr} accepted");
+                trace!("connection {remote_addr:?} accepted");
 
                 poll_fn(|cx| make_service.poll_ready(cx))
                     .await
@@ -335,7 +413,7 @@ where
 
                 let tower_service = make_service
                     .call(IncomingStream {
-                        tcp_stream: &tcp_stream,
+                        io: &io,
                         remote_addr,
                     })
                     .await
@@ -350,10 +428,8 @@ where
 
                 compio::runtime::spawn(async move {
                     let builder = Builder::new(CompioExecutor);
-                    let conn = builder.serve_connection_with_upgrades(
-                        tcp_stream,
-                        ServiceSendWrapper::new(hyper_service),
-                    );
+                    let conn = builder
+                        .serve_connection_with_upgrades(io, ServiceSendWrapper::new(hyper_service));
                     pin_mut!(conn);
 
                     let signal_closed = signal_tx.closed().fuse();
@@ -374,15 +450,13 @@ where
                         }
                     }
 
-                    trace!("connection {remote_addr} closed");
-
                     drop(close_rx);
                 })
                 .detach();
             }
 
             drop(close_rx);
-            drop(tcp_listener);
+            drop(listener);
 
             trace!(
                 "waiting for {} task(s) to finish",
@@ -392,41 +466,6 @@ where
 
             Ok(())
         })))
-    }
-}
-
-fn is_connection_error(e: &io::Error) -> bool {
-    matches!(
-        e.kind(),
-        io::ErrorKind::ConnectionRefused
-            | io::ErrorKind::ConnectionAborted
-            | io::ErrorKind::ConnectionReset
-    )
-}
-
-async fn tcp_accept(listener: &TcpListener) -> Option<(TcpStream, SocketAddr)> {
-    match listener.accept().await {
-        Ok(conn) => Some(conn),
-        Err(e) => {
-            if is_connection_error(&e) {
-                return None;
-            }
-
-            // [From `hyper::Server` in 0.14](https://github.com/hyperium/hyper/blob/v0.14.27/src/server/tcp.rs#L186)
-            //
-            // > A possible scenario is that the process has hit the max open files
-            // > allowed, and so trying to accept a new connection will fail with
-            // > `EMFILE`. In some cases, it's preferable to just wait for some time, if
-            // > the application will likely close some files (or connections), and try
-            // > to accept the connection again. If this option is `true`, the error
-            // > will be logged at the `error` level, since it is still a big deal,
-            // > and then the listener will sleep for 1 second.
-            //
-            // hyper allowed customizing this but axum does not.
-            error!("accept error: {e}");
-            compio::time::sleep(Duration::from_secs(1)).await;
-            None
-        }
     }
 }
 
@@ -454,25 +493,26 @@ impl std::fmt::Debug for ServeFuture {
 ///
 /// [`IntoMakeServiceWithConnectInfo`]: crate::extract::connect_info::IntoMakeServiceWithConnectInfo
 #[derive(Debug)]
-pub struct IncomingStream<'a> {
-    tcp_stream: &'a HyperStream<TcpStream>,
-    remote_addr: SocketAddr,
+pub struct IncomingStream<'a, L: Listener> {
+    io: &'a HyperStream<L::Io>,
+    remote_addr: L::Addr,
 }
 
-impl IncomingStream<'_> {
-    /// Returns the local address that this stream is bound to.
-    pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
-        self.tcp_stream.get_ref().local_addr()
+impl<L: Listener> IncomingStream<'_, L> {
+    /// Get a reference to the inner IO type.
+    pub fn io(&self) -> &L::Io {
+        self.io.get_ref()
     }
 
     /// Returns the remote address that this stream is bound to.
-    pub fn remote_addr(&self) -> SocketAddr {
-        self.remote_addr
+    pub fn remote_addr(&self) -> &L::Addr {
+        &self.remote_addr
     }
 }
 
-impl<H, T, S> Service<IncomingStream<'_>> for HandlerService<H, T, S>
+impl<L, H, T, S> Service<IncomingStream<'_, L>> for HandlerService<H, T, S>
 where
+    L: Listener,
     H: Clone,
     S: Clone,
 {
@@ -484,12 +524,15 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, _req: IncomingStream<'_>) -> Self::Future {
+    fn call(&mut self, _req: IncomingStream<'_, L>) -> Self::Future {
         std::future::ready(Ok(self.clone()))
     }
 }
 
-impl Service<IncomingStream<'_>> for MethodRouter<()> {
+impl<L> Service<IncomingStream<'_, L>> for MethodRouter<()>
+where
+    L: Listener,
+{
     type Error = Infallible;
     type Future = std::future::Ready<Result<Self::Response, Self::Error>>;
     type Response = Self;
@@ -498,12 +541,15 @@ impl Service<IncomingStream<'_>> for MethodRouter<()> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, _req: IncomingStream<'_>) -> Self::Future {
+    fn call(&mut self, _req: IncomingStream<'_, L>) -> Self::Future {
         std::future::ready(Ok(self.clone().with_state(())))
     }
 }
 
-impl Service<IncomingStream<'_>> for Router<()> {
+impl<L> Service<IncomingStream<'_, L>> for Router<()>
+where
+    L: Listener,
+{
     type Error = Infallible;
     type Future = std::future::Ready<Result<Self::Response, Self::Error>>;
     type Response = Self;
@@ -512,7 +558,7 @@ impl Service<IncomingStream<'_>> for Router<()> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, _req: IncomingStream<'_>) -> Self::Future {
+    fn call(&mut self, _req: IncomingStream<'_, L>) -> Self::Future {
         // call `Router::with_state` such that everything is turned into `Route` eagerly
         // rather than doing that per request
         std::future::ready(Ok(self.clone().with_state(())))
