@@ -13,6 +13,7 @@ use std::{
 
 use compio::{
     buf::bytes::Bytes,
+    driver::DriverType,
     net::{ToSocketAddrsAsync, UdpSocket},
     quic::{
         ClientBuilder, ConnectError, Connecting, Connection, Endpoint, EndpointConfig,
@@ -58,6 +59,9 @@ impl DualEndpoint {
             0,
             0,
         )))?;
+        if DriverType::is_polling() {
+            v6sock.set_nonblocking(true)?;
+        }
         let v6sock = UdpSocket::from_std(v6sock.into())?;
         let v6end = Endpoint::new(
             v6sock,
@@ -70,6 +74,9 @@ impl DualEndpoint {
         } else {
             let v4sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
             v4sock.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)))?;
+            if DriverType::is_polling() {
+                v4sock.set_nonblocking(true)?;
+            }
             let v4sock = UdpSocket::from_std(v4sock.into())?;
             Some(Endpoint::new(
                 v4sock,
