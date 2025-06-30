@@ -42,6 +42,65 @@ async fn response_bytes() {
 }
 
 #[compio::test]
+#[cfg(feature = "stream")]
+async fn response_bytes_stream() {
+    use std::{
+        pin::Pin,
+        task::{Context, Poll},
+    };
+
+    use axum::body::Body;
+    use compio::bytes;
+    use futures_util::{Stream, StreamExt};
+
+    #[derive(Default)]
+    struct ChunkedBody {
+        chunks_sent: usize,
+    }
+
+    impl Stream for ChunkedBody {
+        type Item = Result<bytes::Bytes, std::io::Error>;
+
+        fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            if self.chunks_sent == 10 {
+                return Poll::Ready(None);
+            }
+
+            let this = self.get_mut();
+
+            this.chunks_sent += 1;
+            Poll::Ready(Some(Ok(format!("Chunk {}", this.chunks_sent).into())))
+        }
+    }
+
+    let server =
+        server::http(move |_req| async { Body::from_stream(ChunkedBody::default()) }).await;
+
+    let client = Client::new();
+
+    let res = client
+        .get(format!("http://{}/bytes", server.addr()))
+        .expect("cannot create request builder")
+        .send()
+        .await
+        .expect("Failed to get");
+    assert_eq!(res.content_length(), None);
+
+    let mut bytes_stream = res.bytes_stream().enumerate();
+    let mut chunks_received = 0;
+
+    while let Some((i, bytes)) = bytes_stream.next().await {
+        chunks_received += 1;
+        assert_eq!(
+            bytes.unwrap(),
+            compio::bytes::Bytes::from(format!("Chunk {}", i + 1))
+        );
+    }
+
+    assert_eq!(chunks_received, 10);
+}
+
+#[compio::test]
 #[cfg(feature = "json")]
 async fn response_json() {
     let server = server::http(move |_req| async { "\"Hello\"" }).await;

@@ -71,6 +71,7 @@ http3 = [
     "rustls",
 ]
 http3-altsvc = ["http3"]
+stream = []
 all = [
     "cookies",
     "json",
@@ -79,6 +80,7 @@ all = [
     "http2",
     "http3",
     "http3-altsvc",
+    "stream"
 ]
 
 once_cell_try = ["compio/once_cell_try"]

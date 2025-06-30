@@ -251,4 +251,33 @@ impl Response {
     pub async fn bytes(self) -> Result<Bytes> {
         Ok(self.body.collect().await?.to_bytes())
     }
+
+    /// Convert the response into a [`futures_util::Stream`] of [`Bytes`]
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use futures_util::StreamExt;
+    ///
+    /// # async fn run() -> cyper::Result<()> {
+    /// let client = cyper::Client::new();
+    /// let mut bytes_stream = client
+    ///     .get("http://httpbin.org/stream-bytes/16777216")?
+    ///     .send()
+    ///     .await?
+    ///     .bytes_stream();
+    ///
+    /// while let Some(bytes) = bytes_stream.next().await {
+    ///     let bytes = bytes?;
+    ///     println!("Collected {} bytes!", bytes.len());
+    /// }
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline]
+    #[cfg(feature = "stream")]
+    pub fn bytes_stream(self) -> impl futures_util::Stream<Item = Result<Bytes>> {
+        self.body
+    }
 }
