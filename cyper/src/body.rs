@@ -191,3 +191,24 @@ impl hyper::body::Body for ResponseBody {
         }
     }
 }
+
+#[cfg(feature = "stream")]
+impl Stream for ResponseBody {
+    type Item = Result<Bytes, crate::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        loop {
+            return match std::task::ready!(hyper::body::Body::poll_frame(self.as_mut(), cx)) {
+                Some(Ok(frame)) => {
+                if let Ok(data) = frame.into_data() {
+                    Poll::Ready(Some(Ok(data)))
+                } else {
+                    continue;
+                }
+            }
+            Some(Err(err)) => Poll::Ready(Some(Err(err))),
+                None => Poll::Ready(None),
+            }
+        }
+    }
+}
