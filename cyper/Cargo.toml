@@ -28,7 +28,7 @@ h3 = { version = "0.0.8", optional = true }
 
 async-stream = "0.3"
 base64 = "0.22"
-cookie_store = { version = "0.21", optional = true }
+cookie_store = { version = "0.22", optional = true }
 encoding_rs = "0.8"
 futures-util = { workspace = true }
 http-body-util = "0.1.0"
