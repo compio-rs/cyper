@@ -15,6 +15,7 @@ pub enum TlsBackend {
     Rustls(Option<std::sync::Arc<compio::tls::rustls::ClientConfig>>),
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for TlsBackend {
     fn default() -> Self {
         cfg_if::cfg_if! {
