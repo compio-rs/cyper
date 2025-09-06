@@ -13,12 +13,12 @@ use std::{
 
 use compio::{
     buf::bytes::Bytes,
-    driver::DriverType,
     net::{ToSocketAddrsAsync, UdpSocket},
     quic::{
         ClientBuilder, ConnectError, Connecting, Connection, Endpoint, EndpointConfig,
         h3::{OpenStreams, client::SendRequest},
     },
+    runtime::Runtime,
 };
 use futures_util::TryStreamExt;
 use h3::error::ConnectionError;
@@ -59,7 +59,8 @@ impl DualEndpoint {
             0,
             0,
         )))?;
-        if DriverType::is_polling() {
+        let is_polling = Runtime::with_current(|r| r.driver_type().is_polling());
+        if is_polling {
             v6sock.set_nonblocking(true)?;
         }
         let v6sock = UdpSocket::from_std(v6sock.into())?;
@@ -74,7 +75,7 @@ impl DualEndpoint {
         } else {
             let v4sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
             v4sock.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)))?;
-            if DriverType::is_polling() {
+            if is_polling {
                 v4sock.set_nonblocking(true)?;
             }
             let v4sock = UdpSocket::from_std(v4sock.into())?;
