@@ -1,6 +1,6 @@
 [package]
 name = "cyper"
-version = "0.4.0"
+version = "0.5.0"
 description = "HTTP client library based on compio and hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
@@ -80,7 +80,7 @@ all = [
     "http2",
     "http3",
     "http3-altsvc",
-    "stream"
+    "stream",
 ]
 
 once_cell_try = ["compio/once_cell_try"]
