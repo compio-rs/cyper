@@ -22,7 +22,6 @@ socket2 = { workspace = true }
 
 axum-core = { workspace = true }
 axum = { workspace = true, default-features = false }
-futures-channel = { workspace = true }
 futures-util = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
 hyper-util = { workspace = true, features = ["service"] }
