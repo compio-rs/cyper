@@ -1,11 +1,12 @@
 use axum::{extract::Request, response::IntoResponse};
 use http::header::SET_COOKIE;
+use http_body_util::Empty;
 
-mod server;
+mod mock_server;
 
 #[compio::test]
 async fn cookie_response_accessor() {
-    let server = server::http(move |_req| async move {
+    let server = mock_server::http(move |_| async move {
         http::Response::builder()
             .header("Set-Cookie", "key=val")
             .header(
@@ -19,11 +20,10 @@ async fn cookie_response_accessor() {
             .header("Set-Cookie", "httponly=1; HttpOnly")
             .header("Set-Cookie", "samesitelax=1; SameSite=Lax")
             .header("Set-Cookie", "samesitestrict=1; SameSite=Strict")
-            .body(String::new())
+            .body(Empty::new())
             .unwrap()
     })
     .await;
-
     let client = cyper::Client::new();
 
     let url = format!("http://{}/", server.addr());
@@ -78,7 +78,7 @@ async fn cookie_response_accessor() {
 
 #[compio::test]
 async fn cookie_store_simple() {
-    let server = server::http(move |req: Request| async move {
+    let server = mock_server::http(move |req: Request| async move {
         if req.uri() == "/2" {
             assert_eq!(req.headers()["cookie"], "key=val");
         }
@@ -97,20 +97,21 @@ async fn cookie_store_simple() {
 
 #[compio::test]
 async fn cookie_store_overwrite_existing() {
-    let server = server::http(move |req: Request| async move {
-        if req.uri() == "/" {
-            [(SET_COOKIE, "key=val")].into_response()
-        } else if req.uri() == "/2" {
-            assert_eq!(req.headers()["cookie"], "key=val");
-            [(SET_COOKIE, "key=val2")].into_response()
-        } else {
-            assert_eq!(req.uri(), "/3");
-            assert_eq!(req.headers()["cookie"], "key=val2");
-            http::Response::default()
+    let server = mock_server::http(move |req: Request| async move {
+        match req.uri().path() {
+            "/" => [(SET_COOKIE, "key=val")].into_response(),
+            "/2" => {
+                assert_eq!(req.headers()["cookie"], "key=val");
+                [(SET_COOKIE, "key=val2")].into_response()
+            }
+            _ => {
+                assert_eq!(req.uri(), "/3");
+                assert_eq!(req.headers()["cookie"], "key=val2");
+                http::Response::default()
+            }
         }
     })
     .await;
-
     let client = cyper::Client::builder().cookie_store(true).build();
 
     let url = format!("http://{}/", server.addr());
@@ -125,13 +126,13 @@ async fn cookie_store_overwrite_existing() {
 
 #[compio::test]
 async fn cookie_store_max_age() {
-    let server = server::http(move |req: Request| async move {
+    let server = mock_server::http(move |req: Request| async move {
         assert_eq!(req.headers().get("cookie"), None);
         [(SET_COOKIE, "key=val; Max-Age=0")]
     })
     .await;
-
     let client = cyper::Client::builder().cookie_store(true).build();
+
     let url = format!("http://{}/", server.addr());
     client.get(&url).unwrap().send().await.unwrap();
     client.get(&url).unwrap().send().await.unwrap();
@@ -139,12 +140,11 @@ async fn cookie_store_max_age() {
 
 #[compio::test]
 async fn cookie_store_expires() {
-    let server = server::http(move |req: Request| async move {
+    let server = mock_server::http(move |req: Request| async move {
         assert_eq!(req.headers().get("cookie"), None);
         [(SET_COOKIE, "key=val; Expires=Wed, 21 Oct 2015 07:28:00 GMT")]
     })
     .await;
-
     let client = cyper::Client::builder().cookie_store(true).build();
 
     let url = format!("http://{}/", server.addr());
@@ -154,18 +154,17 @@ async fn cookie_store_expires() {
 
 #[compio::test]
 async fn cookie_store_path() {
-    let server = server::http(move |req: Request| async move {
+    let server = mock_server::http(move |req: Request| async move {
         if req.uri() == "/" {
             assert_eq!(req.headers().get("cookie"), None);
-            [(SET_COOKIE, "key=val; Path=/subpath")].into_response()
-        } else {
-            assert_eq!(req.uri(), "/subpath");
-            assert_eq!(req.headers()["cookie"], "key=val");
-            http::Response::default()
+            return [(SET_COOKIE, "key=val; Path=/subpath")].into_response();
         }
+
+        assert_eq!(req.uri(), "/subpath");
+        assert_eq!(req.headers()["cookie"], "key=val");
+        http::Response::default()
     })
     .await;
-
     let client = cyper::Client::builder().cookie_store(true).build();
 
     let url = format!("http://{}/", server.addr());

@@ -3,7 +3,7 @@ members = ["cyper-core", "cyper", "cyper-axum"]
 resolver = "2"
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 authors = ["Berrysoft <Strawberry_Str@hotmail.com>"]
 readme = "README.md"
 license = "MIT"
@@ -13,22 +13,20 @@ repository = "https://github.com/compio-rs/cyper"
 compio = "0.16.0"
 compio-quic = "0.5.0"
 cyper-core = { path = "./cyper-core", default-features = false, version = "0.5.0" }
-cyper-axum = { path = "./cyper-axum", default-features = false, version = "0.5.0" }
 socket2 = "0.6"
 
-cfg-if = "1.0.0"
-futures-channel = "0.3.29"
-futures-util = "0.3.30"
+futures-channel = "0.3.31"
+futures-util = "0.3.31"
 send_wrapper = "0.6"
 
-rustls = { version = "0.23.13", default-features = false }
-rustls-platform-verifier = "0.6.0"
+rustls = { version = "0.23.33", default-features = false }
+rustls-platform-verifier = "0.6.1"
 
-hyper = "1.4.1"
-hyper-util = "0.1.8"
+hyper = "1.7.0"
+hyper-util = "0.1.17"
 
-tower = "0.5.1"
-tower-service = "0.3.2"
+tower = "0.5.2"
+tower-service = "0.3.3"
 
-axum-core = "0.5.0"
-axum = { version = "0.8.1", default-features = false }
+axum-core = "0.5.5"
+axum = { version = "0.8.6", default-features = false }

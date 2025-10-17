@@ -4,11 +4,11 @@ version = "0.5.0"
 description = "Core adaptors and services for compio running on hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
-edition = { workspace = true }
-authors = { workspace = true }
-readme = { workspace = true }
-license = { workspace = true }
-repository = { workspace = true }
+edition.workspace = true
+authors.workspace = true
+readme.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
@@ -19,11 +19,11 @@ compio = { workspace = true, features = ["io-compat", "time"] }
 
 rustls-platform-verifier = { workspace = true, optional = true }
 
-cfg-if = { workspace = true }
-futures-util = { workspace = true }
-hyper = { workspace = true }
+futures-util.workspace = true
+hyper.workspace = true
 hyper-util = { workspace = true, optional = true }
 send_wrapper = { workspace = true, features = ["futures"] }
+ambassador = "0.4.2"
 tower-service = { workspace = true, optional = true }
 
 [features]

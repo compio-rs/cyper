@@ -18,14 +18,12 @@ pub enum TlsBackend {
 #[allow(clippy::derivable_impls)]
 impl Default for TlsBackend {
     fn default() -> Self {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "native-tls")] {
-                Self::NativeTls
-            } else if #[cfg(feature = "rustls")] {
-                Self::Rustls(None)
-            } else {
-                Self::None
-            }
+        if cfg!(feature = "native-tls") {
+            Self::NativeTls
+        } else if cfg!(feature = "rustls") {
+            Self::Rustls(None)
+        } else {
+            Self::None
         }
     }
 }
@@ -49,24 +47,29 @@ impl TlsBackend {
                     .map_err(io::Error::other)?,
             )),
             #[cfg(feature = "rustls")]
-            Self::Rustls(config) => Ok(TlsConnector::from(if let Some(config) = config.clone() {
-                config
-            } else {
-                use std::sync::Arc;
+            Self::Rustls(config) => {
+                let config = match config {
+                    Some(config) => config.clone(),
+                    None => {
+                        use std::sync::Arc;
 
-                use compio::rustls::ClientConfig;
-                use rustls_platform_verifier::ConfigVerifierExt;
+                        use compio::rustls::ClientConfig;
+                        use rustls_platform_verifier::ConfigVerifierExt;
 
-                let mut config =
-                    ClientConfig::with_platform_verifier().map_err(io::Error::other)?;
-                config.alpn_protocols = if cfg!(feature = "http2") {
-                    vec![b"h2".into(), b"http/1.1".into()]
-                } else {
-                    vec![b"http/1.1".into()]
+                        let mut config =
+                            ClientConfig::with_platform_verifier().map_err(io::Error::other)?;
+                        config.alpn_protocols = if cfg!(feature = "http2") {
+                            vec![b"h2".into(), b"http/1.1".into()]
+                        } else {
+                            vec![b"http/1.1".into()]
+                        };
+                        config.key_log = Arc::new(compio::rustls::KeyLogFile::new());
+                        Arc::new(config)
+                    }
                 };
-                config.key_log = Arc::new(compio::rustls::KeyLogFile::new());
-                Arc::new(config)
-            })),
+
+                Ok(TlsConnector::from(config))
+            }
         }
     }
 }

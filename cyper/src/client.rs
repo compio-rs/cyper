@@ -44,12 +44,10 @@ impl Client {
         }
 
         #[cfg(feature = "cookies")]
+        if headers.get(http::header::COOKIE).is_none()
+            && let Some(cookie_store) = self.cookie_value_impl(&url)
         {
-            if headers.get(http::header::COOKIE).is_none() {
-                if let Some(cookie_store) = self.cookie_value_impl(&url) {
-                    headers.insert(http::header::COOKIE, cookie_store);
-                }
-            }
+            headers.insert(http::header::COOKIE, cookie_store);
         }
 
         let mut request = hyper::Request::builder()
@@ -63,8 +61,7 @@ impl Client {
             .body(body)?;
         *request.headers_mut() = headers;
 
-        #[cfg(feature = "http3")]
-        let res = {
+        let res = if cfg!(feature = "http3") {
             #[cfg(feature = "http3-altsvc")]
             let host = url.host_str().expect("a parsed Url should have host");
 
@@ -76,6 +73,7 @@ impl Client {
                 if let Ok(value) = http::HeaderValue::from_bytes(host.as_bytes()) {
                     request.headers_mut().insert("Alt-Used", value);
                 }
+
                 should_http3 = true;
             }
 
@@ -84,45 +82,47 @@ impl Client {
             } else {
                 self.send_h1h2_request(request, &url).await?
             };
+
             #[cfg(feature = "http3-altsvc")]
-            if let Some(alt_svc) = res.headers().get(http::header::ALT_SVC) {
-                if let Ok(alt_svc) = std::str::from_utf8(alt_svc.as_bytes()) {
-                    if let Ok(services) = crate::altsvc::parse(alt_svc) {
-                        match services {
-                            crate::altsvc::AltService::Clear => self.h3_hosts.clear(host),
-                            crate::altsvc::AltService::Services(services) => {
-                                for srv in services {
-                                    if self.h3_hosts.try_insert(host, &srv) {
-                                        break;
-                                    }
-                                }
+            if let Some(alt_svc) = res.headers().get(http::header::ALT_SVC)
+                && let Ok(alt_svc) = std::str::from_utf8(alt_svc.as_bytes())
+                && let Ok(services) = crate::altsvc::parse(alt_svc)
+            {
+                match services {
+                    crate::altsvc::AltService::Clear => self.h3_hosts.clear(host),
+                    crate::altsvc::AltService::Services(services) => {
+                        for srv in services {
+                            if self.h3_hosts.try_insert(host.to_string(), &srv) {
+                                break;
                             }
                         }
                     }
                 }
             }
             res
+        } else {
+            self.send_h1h2_request(request, &url).await?
         };
-        #[cfg(not(feature = "http3"))]
-        let res = self.send_h1h2_request(request, &url).await?;
 
         #[cfg(feature = "cookies")]
-        {
-            if let Some(cookie_store) = &self.client.cookies {
-                let mut values = res
-                    .headers()
-                    .get_all(http::header::SET_COOKIE)
-                    .into_iter()
-                    .peekable();
-                if values.peek().is_some() {
-                    let mut cookie_store = cookie_store.write().unwrap();
-                    cookie_store.store_response_cookies(
-                        values.filter_map(|val| {
-                            std::str::from_utf8(val.as_bytes()).ok()?.parse().ok()
-                        }),
-                        &url,
-                    );
-                }
+        if let Some(cookie_store) = &self.client.cookies {
+            let mut values = res
+                .headers()
+                .get_all(http::header::SET_COOKIE)
+                .into_iter()
+                .peekable();
+
+            if values.peek().is_some() {
+                let mut cookie_store = cookie_store.write().unwrap();
+                cookie_store.store_response_cookies(
+                    values
+                        .map(HeaderValue::as_bytes)
+                        .map(str::from_utf8)
+                        .filter_map(std::result::Result::ok)
+                        .map(str::parse)
+                        .filter_map(std::result::Result::ok),
+                    &url,
+                );
             }
         }
 
@@ -149,11 +149,10 @@ impl Client {
             .map(|(name, value)| format!("{name}={value}"))
             .collect::<Vec<_>>()
             .join("; ");
-        if !value.is_empty() {
-            Some(HeaderValue::from_maybe_shared(Bytes::from(value)).ok()?)
-        } else {
-            None
-        }
+
+        (!value.is_empty())
+            .then(|| HeaderValue::from_maybe_shared(Bytes::from(value)))
+            .and_then(std::result::Result::ok)
     }
 
     /// Send a request with method and url.
@@ -237,6 +236,7 @@ impl ClientBuilder {
             .set_host(true)
             .timer(CompioTimer)
             .build(Connector::new(self.tls));
+
         let client_ref = ClientInner {
             client,
             headers: self.headers,
@@ -257,6 +257,7 @@ impl ClientBuilder {
         for (key, value) in headers.iter() {
             self.headers.insert(key, value.clone());
         }
+
         self
     }
 
@@ -289,11 +290,12 @@ impl ClientBuilder {
     /// By default, no cookie store is used.
     #[cfg(feature = "cookies")]
     pub fn cookie_store(mut self, enable: bool) -> Self {
-        if enable {
-            self.cookies = Some(RwLock::new(CookieStore::default()))
+        self.cookies = if enable {
+            Some(RwLock::new(CookieStore::default()))
         } else {
-            self.cookies = None;
-        }
+            None
+        };
+
         self
     }
 }

@@ -59,10 +59,12 @@ impl DualEndpoint {
             0,
             0,
         )))?;
+
         let is_polling = Runtime::with_current(|r| r.driver_type().is_polling());
         if is_polling {
             v6sock.set_nonblocking(true)?;
         }
+
         let v6sock = UdpSocket::from_std(v6sock.into())?;
         let v6end = Endpoint::new(
             v6sock,
@@ -70,32 +72,31 @@ impl DualEndpoint {
             None,
             Some(client_config.clone()),
         )?;
-        let v4end = if dual_stack {
-            None
-        } else {
-            let v4sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
-            v4sock.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)))?;
-            if is_polling {
-                v4sock.set_nonblocking(true)?;
-            }
-            let v4sock = UdpSocket::from_std(v4sock.into())?;
-            Some(Endpoint::new(
-                v4sock,
-                EndpointConfig::default(),
-                None,
-                Some(client_config),
-            )?)
-        };
+
+        let v4end = (!dual_stack)
+            .then(|| {
+                let v4sock = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+                v4sock.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)))?;
+
+                if is_polling {
+                    v4sock.set_nonblocking(true)?;
+                }
+
+                let v4sock = UdpSocket::from_std(v4sock.into())?;
+                Endpoint::new(v4sock, EndpointConfig::default(), None, Some(client_config))
+            })
+            .and_then(std::result::Result::ok);
 
         Ok(Self { v4end, v6end })
     }
 
     fn end(&self, is_v4: bool) -> &Endpoint {
-        if let Some(v4end) = &self.v4end {
-            if is_v4 {
-                return v4end;
-            }
+        if let Some(v4end) = &self.v4end
+            && is_v4
+        {
+            return v4end;
         }
+
         &self.v6end
     }
 
@@ -175,11 +176,9 @@ impl PoolClient {
         let (head, req_body) = req.into_parts();
         let mut req = Request::from_parts(head, ());
 
-        if let Some(n) = req_body.size_hint().exact() {
-            if n > 0 {
-                req.headers_mut()
-                    .insert(http::header::CONTENT_LENGTH, n.into());
-            }
+        if let Some(n @ 1..) = req_body.size_hint().exact() {
+            req.headers_mut()
+                .insert(http::header::CONTENT_LENGTH, n.into());
         }
 
         let mut stream = self.inner.send_request(req).await?;
@@ -231,11 +230,10 @@ impl PoolConnection {
     }
 
     pub fn is_invalid(&self) -> bool {
-        match self.close_rx.try_recv() {
-            Err(TryRecvError::Empty) => false,
-            Err(TryRecvError::Disconnected) => true,
-            Ok(_) => true,
-        }
+        matches!(
+            self.close_rx.try_recv(),
+            Err(TryRecvError::Disconnected) | Ok(_)
+        )
     }
 }
 
@@ -280,13 +278,14 @@ impl Pool {
 
     pub fn try_pool(&self, key: &Key) -> Option<PoolClient> {
         let mut inner = self.inner.lock().unwrap();
-        if let Some(conn) = inner.idle_conns.get(key) {
-            // We check first if the connection still valid
-            // and if not, we remove it from the pool.
-            if conn.is_invalid() {
-                inner.idle_conns.remove(key);
-                return None;
-            }
+
+        // We check first if the connection still valid
+        // and if not, we remove it from the pool.
+        if let Some(conn) = inner.idle_conns.get(key)
+            && conn.is_invalid()
+        {
+            inner.idle_conns.remove(key);
+            return None;
         }
 
         inner.idle_conns.get_mut(key).map(|conn| conn.pool())
@@ -301,7 +300,7 @@ impl Pool {
         let (close_tx, close_rx) = std::sync::mpsc::channel();
         compio::runtime::spawn(async move {
             let e = driver.wait_idle().await;
-            close_tx.send(e).ok();
+            let _ = close_tx.send(e);
         })
         .detach();
 

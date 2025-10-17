@@ -30,6 +30,7 @@ async fn main() {
     } else {
         Version::HTTP_11
     };
+
     let client = Client::new();
     let response = client
         .get(opts.url)
@@ -38,5 +39,6 @@ async fn main() {
         .send()
         .await
         .unwrap();
+
     println!("{}", response.text().await.unwrap());
 }

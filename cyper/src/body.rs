@@ -24,12 +24,9 @@ impl hyper::body::Body for BodyInner {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.get_mut() {
+            Self::Bytes(b) if b.is_empty() => Poll::Ready(None),
             Self::Bytes(b) => {
-                if b.is_empty() {
-                    Poll::Ready(None)
-                } else {
-                    Poll::Ready(Some(Ok(Frame::data(std::mem::replace(b, Bytes::new())))))
-                }
+                Poll::Ready(Some(Ok(Frame::data(std::mem::replace(b, Bytes::new())))))
             }
             Self::Stream(s) => s.poll_next_unpin(cx).map(|b| b.map(|b| b.map(Frame::data))),
         }
@@ -58,10 +55,12 @@ fn wrap_async_read_at(r: impl AsyncReadAt) -> impl Stream<Item = crate::Result<B
         loop {
             let buffer = Vec::with_capacity(1024);
             let BufResult(res, buffer) = r.read_at(buffer, offset).await;
+
             let len = res?;
             if len == 0 {
                 break;
             }
+
             offset += len as u64;
             yield Bytes::from(buffer);
         }
@@ -171,15 +170,11 @@ impl hyper::body::Body for ResponseBody {
         match this {
             Self::Incoming(b) => unsafe { Pin::new_unchecked(b) }
                 .poll_frame(cx)
-                .map_err(|e| e.into()),
+                .map_err(Into::into),
             #[cfg(feature = "http3")]
-            Self::Blob(b) => {
-                if b.is_empty() {
-                    Poll::Ready(None)
-                } else {
-                    Poll::Ready(Some(Ok(Frame::data(std::mem::replace(b, Bytes::new())))))
-                }
-            }
+            Self::Blob(b) if b.is_empty() => Poll::Ready(None),
+            #[cfg(feature = "http3")]
+            Self::Blob(b) => Poll::Ready(Some(Ok(Frame::data(std::mem::replace(b, Bytes::new()))))),
         }
     }
 
@@ -200,15 +195,15 @@ impl Stream for ResponseBody {
         loop {
             return match std::task::ready!(hyper::body::Body::poll_frame(self.as_mut(), cx)) {
                 Some(Ok(frame)) => {
-                if let Ok(data) = frame.into_data() {
+                    let Ok(data) = frame.into_data() else {
+                        continue;
+                    };
+
                     Poll::Ready(Some(Ok(data)))
-                } else {
-                    continue;
                 }
-            }
-            Some(Err(err)) => Poll::Ready(Some(Err(err))),
+                Some(Err(err)) => Poll::Ready(Some(Err(err))),
                 None => Poll::Ready(None),
-            }
+            };
         }
     }
 }

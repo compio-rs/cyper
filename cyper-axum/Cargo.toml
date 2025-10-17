@@ -4,11 +4,11 @@ version = "0.5.0"
 description = "axum adaptor based on cyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
-edition = { workspace = true }
-authors = { workspace = true }
-readme = { workspace = true }
-license = { workspace = true }
-repository = { workspace = true }
+edition.workspace = true
+authors.workspace = true
+readme.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
@@ -18,16 +18,16 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio = { workspace = true, features = ["time"] }
 compio-log = "0.1.0"
 cyper-core = { workspace = true, features = ["server"] }
-socket2 = { workspace = true }
+socket2.workspace = true
 
-axum-core = { workspace = true }
+axum-core.workspace = true
 axum = { workspace = true, default-features = false }
-futures-util = { workspace = true }
+futures-util.workspace = true
 hyper = { workspace = true, features = ["server"] }
 hyper-util = { workspace = true, features = ["service"] }
 send_wrapper = { workspace = true, features = ["futures"] }
 tower = { workspace = true, features = ["util"] }
-tower-service = { workspace = true }
+tower-service.workspace = true
 
 tokio = { version = "1", features = ["sync"] }
 

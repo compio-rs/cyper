@@ -1,0 +1,14 @@
+{
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "cargo": {
+          "allFeatures": true
+        },
+        "check": {
+          "command": "clippy"
+        }
+      }
+    }
+  }
+}

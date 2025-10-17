@@ -6,6 +6,7 @@ use std::{
     task::{Context, Poll, ready},
 };
 
+use ambassador::{Delegate, delegatable_trait_remote};
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
 use compio::tls::TlsStream;
 use compio::{
@@ -20,7 +21,24 @@ use send_wrapper::SendWrapper;
 
 use crate::TlsBackend;
 
+#[delegatable_trait_remote]
+trait AsyncWrite {
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T>;
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T>;
+    async fn flush(&mut self) -> io::Result<()>;
+    async fn shutdown(&mut self) -> io::Result<()>;
+}
+
+#[delegatable_trait_remote]
+trait AsyncRead {
+    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B>;
+    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V>;
+}
+
 #[allow(clippy::large_enum_variant)]
+#[derive(Delegate)]
+#[delegate(AsyncRead)]
+#[delegate(AsyncWrite)]
 enum HttpStreamInner {
     Tcp(TcpStream),
     #[cfg(any(feature = "native-tls", feature = "rustls"))]
@@ -34,16 +52,14 @@ impl HttpStreamInner {
         let port = uri.port_u16();
         match scheme {
             "http" => {
-                let stream = TcpStream::connect((host, port.unwrap_or(80))).await?;
-                // Ignore it.
-                let _tls = tls;
-                Ok(Self::Tcp(stream))
+                let stream = TcpStream::connect((host, port.unwrap_or(80))).await;
+                stream.map(Self::Tcp)
             }
             #[cfg(any(feature = "native-tls", feature = "rustls"))]
             "https" => {
                 let stream = TcpStream::connect((host, port.unwrap_or(443))).await?;
                 let connector = tls.create_connector()?;
-                Ok(Self::Tls(connector.connect(host, stream).await?))
+                connector.connect(host, stream).await.map(Self::Tls)
             }
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -66,58 +82,6 @@ impl HttpStreamInner {
             Self::Tcp(_) => None,
             #[cfg(any(feature = "native-tls", feature = "rustls"))]
             Self::Tls(s) => s.negotiated_alpn(),
-        }
-    }
-}
-
-impl AsyncRead for HttpStreamInner {
-    async fn read<B: IoBufMut>(&mut self, buf: B) -> BufResult<usize, B> {
-        match self {
-            Self::Tcp(s) => s.read(buf).await,
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
-            Self::Tls(s) => s.read(buf).await,
-        }
-    }
-
-    async fn read_vectored<V: IoVectoredBufMut>(&mut self, buf: V) -> BufResult<usize, V> {
-        match self {
-            Self::Tcp(s) => s.read_vectored(buf).await,
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
-            Self::Tls(s) => s.read_vectored(buf).await,
-        }
-    }
-}
-
-impl AsyncWrite for HttpStreamInner {
-    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        match self {
-            Self::Tcp(s) => s.write(buf).await,
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
-            Self::Tls(s) => s.write(buf).await,
-        }
-    }
-
-    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        match self {
-            Self::Tcp(s) => s.write_vectored(buf).await,
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
-            Self::Tls(s) => s.write_vectored(buf).await,
-        }
-    }
-
-    async fn flush(&mut self) -> io::Result<()> {
-        match self {
-            Self::Tcp(s) => s.flush().await,
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
-            Self::Tls(s) => s.flush().await,
-        }
-    }
-
-    async fn shutdown(&mut self) -> io::Result<()> {
-        match self {
-            Self::Tcp(s) => s.shutdown().await,
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
-            Self::Tls(s) => s.shutdown().await,
         }
     }
 }
@@ -189,8 +153,7 @@ impl Connection for HttpStream {
             .0
             .get_ref()
             .negotiated_alpn()
-            .map(|alpn| alpn.as_slice() == b"h2")
-            .unwrap_or_default();
+            .is_some_and(|alpn| alpn.as_slice() == b"h2");
         if is_h2 { conn.negotiated_h2() } else { conn }
     }
 }

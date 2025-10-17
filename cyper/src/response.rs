@@ -2,7 +2,7 @@ use compio::bytes::Bytes;
 #[cfg(feature = "cookies")]
 use cookie_store::RawCookie;
 use encoding_rs::{Encoding, UTF_8};
-use http::{HeaderMap, StatusCode, Version, header::CONTENT_TYPE};
+use http::{HeaderMap, HeaderValue, StatusCode, Version, header::CONTENT_TYPE};
 use http_body_util::BodyExt;
 use hyper::body::{Body, Incoming};
 use mime::Mime;
@@ -153,16 +153,19 @@ impl Response {
         let content_type = self
             .headers()
             .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<Mime>().ok());
+            .map(HeaderValue::to_str)
+            .and_then(std::result::Result::ok)
+            .map(str::parse::<Mime>)
+            .and_then(std::result::Result::ok);
+
         let encoding_name = content_type
             .as_ref()
-            .and_then(|mime| mime.get_param("charset").map(|charset| charset.as_str()))
+            .and_then(|mime| mime.get_param("charset"))
+            .map(|charset| charset.as_str())
             .unwrap_or(default_encoding);
         let encoding = Encoding::for_label(encoding_name.as_bytes()).unwrap_or(UTF_8);
 
         let full = self.bytes().await?;
-
         let (text, ..) = encoding.decode(&full);
         Ok(text.into_owned())
     }
@@ -227,7 +230,10 @@ impl Response {
             .headers()
             .get_all(http::header::SET_COOKIE)
             .into_iter()
-            .filter_map(|val| std::str::from_utf8(val.as_bytes()).ok()?.parse().ok())
+            .map(HeaderValue::as_bytes)
+            .map(str::from_utf8)
+            .filter_map(std::result::Result::ok)
+            .filter_map(|val| val.parse().ok())
     }
 
     /// Get the full response body as `Bytes`.

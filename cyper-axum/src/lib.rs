@@ -16,7 +16,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use axum::{Router, handler::HandlerService, routing::MethodRouter};
@@ -59,10 +59,17 @@ impl Listener for TcpListener {
     type Io = TcpStream;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        let mut instant = Instant::now();
         loop {
             match Self::accept(self).await {
                 Ok(tup) => return tup,
-                Err(e) => handle_accept_error(e).await,
+                Err(e)
+                    if !is_connection_error(&e) && instant.elapsed() >= Duration::from_secs(1) =>
+                {
+                    error!("accept error: {e}");
+                    instant = Instant::now();
+                }
+                Err(_) => (),
             }
         }
     }
@@ -77,10 +84,17 @@ impl Listener for UnixListener {
     type Io = UnixStream;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        let mut instant = Instant::now();
         loop {
             match Self::accept(self).await {
                 Ok(tup) => return tup,
-                Err(e) => handle_accept_error(e).await,
+                Err(e)
+                    if !is_connection_error(&e) && instant.elapsed() >= Duration::from_secs(1) =>
+                {
+                    error!("accept error: {e}");
+                    instant = Instant::now();
+                }
+                Err(_) => (),
             }
         }
     }
@@ -88,16 +102,6 @@ impl Listener for UnixListener {
     fn local_addr(&self) -> io::Result<Self::Addr> {
         Self::local_addr(self)
     }
-}
-
-async fn handle_accept_error(e: io::Error) {
-    if is_connection_error(&e) {
-        return;
-    }
-
-    error!("accept error: {e}");
-
-    compio::time::sleep(Duration::from_secs(1)).await;
 }
 
 fn is_connection_error(e: &io::Error) -> bool {
@@ -280,7 +284,6 @@ where
 
             loop {
                 let (io, remote_addr) = listener.accept().await;
-
                 let io = HyperStream::new(io);
 
                 poll_fn(|cx| make_service.poll_ready(cx))
@@ -295,26 +298,23 @@ where
                     .await
                     .unwrap_or_else(|err| match err {})
                     .map_request(|req: Request<Incoming>| req.map(Body::new));
-
                 let hyper_service = TowerToHyperService::new(tower_service);
 
                 compio::runtime::spawn(async move {
-                    match Builder::new(CompioExecutor)
+                    #[allow(clippy::redundant_pattern_matching)]
+                    if let Err(_) = Builder::new(CompioExecutor)
                         // upgrades needed for websockets
                         .serve_connection_with_upgrades(io, ServiceSendWrapper::new(hyper_service))
                         .await
                     {
-                        Ok(()) => {}
-                        Err(_err) => {
-                            // This error only appears when the client doesn't
-                            // send a request and
-                            // terminate the connection.
-                            //
-                            // If client sends one request then terminate
-                            // connection whenever, it doesn't
-                            // appear.
-                        }
-                    }
+                        // This error only appears when the client doesn't
+                        // send a request and
+                        // terminates the connection.
+                        //
+                        // Whenever the client sends one request
+                        // then terminates the connection, it
+                        // doesn't appear.
+                    };
                 })
                 .detach();
             }
@@ -393,14 +393,12 @@ where
 
         ServeFuture(Box::pin(SendWrapper::new(async move {
             loop {
-                let (io, remote_addr) = futures_util::select! {
-                    conn = listener.accept().fuse() => {
-                        conn
-                    }
+                let (io, remote_addr) = futures_util::select_biased! {
                     _ = signal_tx.closed().fuse() => {
                         trace!("signal received, not accepting new connections");
                         break;
                     }
+                    conn = listener.accept().fuse() => conn,
                 };
 
                 let io = HyperStream::new(io);
@@ -421,9 +419,7 @@ where
                     .map_request(|req: Request<Incoming>| req.map(Body::new));
 
                 let hyper_service = TowerToHyperService::new(tower_service);
-
                 let signal_tx = Arc::clone(&signal_tx);
-
                 let close_rx = close_rx.clone();
 
                 compio::runtime::spawn(async move {
@@ -436,16 +432,16 @@ where
                     pin_mut!(signal_closed);
 
                     loop {
-                        futures_util::select! {
+                        futures_util::select_biased! {
+                            _ = &mut signal_closed => {
+                                trace!("signal received in task, starting graceful shutdown");
+                                conn.as_mut().graceful_shutdown();
+                            }
                             result = conn.as_mut().fuse() => {
                                 if let Err(_err) = result {
                                     trace!("failed to serve connection: {_err:#}");
                                 }
                                 break;
-                            }
-                            _ = &mut signal_closed => {
-                                trace!("signal received in task, starting graceful shutdown");
-                                conn.as_mut().graceful_shutdown();
                             }
                         }
                     }
@@ -463,7 +459,6 @@ where
                 close_tx.receiver_count()
             );
             close_tx.closed().await;
-
             Ok(())
         })))
     }

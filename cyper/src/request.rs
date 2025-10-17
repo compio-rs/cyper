@@ -216,6 +216,7 @@ impl RequestBuilder {
             let serializer = serde_urlencoded::Serializer::new(&mut pairs);
             query.serialize(serializer)?;
         }
+
         if let Some("") = url.query() {
             url.set_query(None);
         }
@@ -262,6 +263,7 @@ impl RequestBuilder {
             CONTENT_TYPE,
             HeaderValue::from_static("application/x-www-form-urlencoded"),
         );
+
         Ok(self.body(body))
     }
 
@@ -279,6 +281,7 @@ impl RequestBuilder {
                 .headers_mut()
                 .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         }
+
         Ok(self.body(body))
     }
 

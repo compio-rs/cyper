@@ -22,6 +22,7 @@ where
             let _ = write!(encoder, "{password}");
         }
     }
+
     let mut header = HeaderValue::from_bytes(&buf).expect("base64 is always valid HeaderValue");
     header.set_sensitive(true);
     header

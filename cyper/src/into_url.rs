@@ -10,10 +10,10 @@ pub trait IntoUrl {
 impl IntoUrl for Url {
     fn into_url(self) -> crate::Result<Url> {
         if self.has_host() {
-            Ok(self)
-        } else {
-            Err(crate::Error::BadScheme(self))
+            return Ok(self);
         }
+
+        Err(crate::Error::BadScheme(self))
     }
 }
 

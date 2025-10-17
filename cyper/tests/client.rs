@@ -1,4 +1,4 @@
-mod server;
+mod mock_server;
 
 #[cfg(feature = "json")]
 use std::collections::HashMap;
@@ -9,8 +9,7 @@ use http::header::CONTENT_TYPE;
 
 #[compio::test]
 async fn response_text() {
-    let server = server::http(move |_req| async { "Hello" }).await;
-
+    let server = mock_server::http(move |_| async { "Hello" }).await;
     let client = Client::new();
 
     let res = client
@@ -26,8 +25,7 @@ async fn response_text() {
 
 #[compio::test]
 async fn response_bytes() {
-    let server = server::http(move |_req| async { "Hello" }).await;
-
+    let server = mock_server::http(move |_| async { "Hello" }).await;
     let client = Client::new();
 
     let res = client
@@ -67,15 +65,13 @@ async fn response_bytes_stream() {
             }
 
             let this = self.get_mut();
-
             this.chunks_sent += 1;
             Poll::Ready(Some(Ok(format!("Chunk {}", this.chunks_sent).into())))
         }
     }
 
     let server =
-        server::http(move |_req| async { Body::from_stream(ChunkedBody::default()) }).await;
-
+        mock_server::http(move |_| async { Body::from_stream(ChunkedBody::default()) }).await;
     let client = Client::new();
 
     let res = client
@@ -103,8 +99,7 @@ async fn response_bytes_stream() {
 #[compio::test]
 #[cfg(feature = "json")]
 async fn response_json() {
-    let server = server::http(move |_req| async { "\"Hello\"" }).await;
-
+    let server = mock_server::http(move |_| async { "\"Hello\"" }).await;
     let client = Client::new();
 
     let res = client
@@ -139,6 +134,7 @@ async fn test_native_tls() {
         .send()
         .await
         .unwrap();
+
     resp.text().await.unwrap();
 }
 
@@ -153,6 +149,7 @@ async fn test_rustls() {
         .send()
         .await
         .unwrap();
+
     resp.text().await.unwrap();
 }
 
@@ -167,14 +164,14 @@ async fn test_http3() {
         .send()
         .await
         .unwrap();
+
     resp.text().await.unwrap();
 }
 
 #[test]
 #[cfg(feature = "json")]
 fn add_json_default_content_type_if_not_set_manually() {
-    let mut map = HashMap::new();
-    map.insert("body", "json");
+    let map = HashMap::from([("body", "json")]);
     let content_type = http::HeaderValue::from_static("application/vnd.api+json");
     let req = Client::new()
         .post("https://www.example.com/")
@@ -191,8 +188,7 @@ fn add_json_default_content_type_if_not_set_manually() {
 #[test]
 #[cfg(feature = "json")]
 fn update_json_content_type_if_set_manually() {
-    let mut map = HashMap::new();
-    map.insert("body", "json");
+    let map = HashMap::from([("body", "json")]);
     let req = Client::new()
         .post("https://www.example.com/")
         .expect("cannot create request builder")
