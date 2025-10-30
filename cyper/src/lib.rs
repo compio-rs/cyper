@@ -27,6 +27,9 @@ mod http3;
 #[cfg(feature = "http3-altsvc")]
 mod altsvc;
 
+#[cfg(feature = "nyquest")]
+pub mod nyquest;
+
 /// The error type used in `compio-http`.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

@@ -26,6 +26,8 @@ hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true }
 h3 = { version = "0.0.8", optional = true }
 
+nyquest-interface = { version = "0.3.0", optional = true, features = ["async"] }
+
 async-stream = "0.3"
 base64 = "0.22"
 cookie_store = { version = "0.22", optional = true }
@@ -46,6 +48,8 @@ url = "2"
 compio = { workspace = true, features = ["macros"] }
 cyper-axum = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
+
+nyquest = { version = "0.3.0", features = ["async"] }
 
 axum = { workspace = true }
 clap = { version = "4", features = ["derive"] }
@@ -83,9 +87,15 @@ all = [
     "stream",
 ]
 
+nyquest = ["dep:nyquest-interface", "stream"]
+
 once_cell_try = ["compio/once_cell_try"]
 nightly = ["once_cell_try", "cyper-core/nightly", "cyper-axum/nightly"]
 
 [[test]]
 name = "cookie"
 required-features = ["cookies"]
+
+[[test]]
+name = "nyquest"
+required-features = ["nyquest"]

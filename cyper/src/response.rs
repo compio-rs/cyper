@@ -281,3 +281,15 @@ impl Response {
         self.body
     }
 }
+
+#[cfg(feature = "stream")]
+impl futures_util::Stream for Response {
+    type Item = Result<Bytes>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        std::pin::Pin::new(&mut self.body).poll_next(cx)
+    }
+}
