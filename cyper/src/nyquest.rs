@@ -38,17 +38,17 @@ impl AsyncBackend for CyperAsyncBackend {
     type AsyncClient = CyperAsyncClient;
 
     async fn create_async_client(&self, options: ClientOptions) -> Result<Self::AsyncClient> {
-        let client = crate::ClientBuilder::new()
-            .cookie_store(options.use_cookies)
-            .default_headers(HeaderMap::from_iter(
-                options.default_headers.into_iter().map(|(k, v)| {
-                    (
-                        HeaderName::from_bytes(k.as_bytes()).unwrap(),
-                        HeaderValue::from_str(&v).unwrap(),
-                    )
-                }),
-            ))
-            .build();
+        let builder = crate::ClientBuilder::new().default_headers(HeaderMap::from_iter(
+            options.default_headers.into_iter().map(|(k, v)| {
+                (
+                    HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                    HeaderValue::from_str(&v).unwrap(),
+                )
+            }),
+        ));
+        #[cfg(feature = "cookies")]
+        let builder = builder.cookie_store(options.use_cookies);
+        let client = builder.build();
         let base_url = if let Some(url) = options.base_url {
             Some(Url::parse(&url).map_err(|_| nyquest_interface::Error::InvalidUrl)?)
         } else {
