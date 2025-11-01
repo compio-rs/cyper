@@ -70,7 +70,11 @@ impl CyperBackend {
         Ok(CyperClient {
             client,
             base_url,
-            user_agent: options.user_agent,
+            user_agent: if let Some(v) = options.user_agent {
+                Some(convert_header_value(v)?)
+            } else {
+                None
+            },
             timeout: options.request_timeout,
             max_buffer_size: options.max_response_buffer_size,
         })
@@ -81,7 +85,7 @@ impl CyperBackend {
 #[derive(Clone)]
 pub struct CyperClient {
     client: crate::Client,
-    user_agent: Option<String>,
+    user_agent: Option<HeaderValue>,
     base_url: Option<Url>,
     timeout: Option<Duration>,
     max_buffer_size: Option<u64>,
@@ -100,9 +104,8 @@ impl CyperClient {
                 nyquest_interface::Method::Patch => http::Method::PATCH,
                 nyquest_interface::Method::Post => http::Method::POST,
                 nyquest_interface::Method::Put => http::Method::PUT,
-                nyquest_interface::Method::Other(s) => {
-                    http::Method::from_bytes(s.as_bytes()).unwrap()
-                }
+                nyquest_interface::Method::Other(s) => http::Method::from_bytes(s.as_bytes())
+                    .map_err(|e| NyquestError::Io(std::io::Error::other(e)))?,
             };
             let url = match self.base_url.as_ref() {
                 Some(base) => base.join(&req.relative_uri),
@@ -190,10 +193,7 @@ impl CyperClient {
                 builder
             };
             let builder = if let Some(user_agent) = &self.user_agent {
-                builder.header(
-                    http::header::USER_AGENT,
-                    HeaderValue::from_str(user_agent).unwrap(),
-                )?
+                builder.header(http::header::USER_AGENT, user_agent.clone())?
             } else {
                 builder
             };
