@@ -263,21 +263,52 @@ impl ClientBuilder {
     /// Force using the native TLS backend.
     #[cfg(feature = "native-tls")]
     pub fn use_native_tls(mut self) -> Self {
-        self.tls = TlsBackend::NativeTls;
+        self.tls = TlsBackend::NativeTls {
+            accept_invalid_certs: false,
+        };
         self
     }
 
     /// Force using the Rustls TLS backend.
     #[cfg(feature = "rustls")]
     pub fn use_rustls_default(mut self) -> Self {
-        self.tls = TlsBackend::Rustls(None);
+        self.tls = TlsBackend::Rustls {
+            config: None,
+            accept_invalid_certs: false,
+        };
         self
     }
 
     /// Force using the Rustls TLS backend.
     #[cfg(feature = "rustls")]
     pub fn use_rustls(mut self, config: std::sync::Arc<compio::tls::rustls::ClientConfig>) -> Self {
-        self.tls = TlsBackend::Rustls(Some(config));
+        self.tls = TlsBackend::Rustls {
+            config: Some(config),
+            accept_invalid_certs: false,
+        };
+        self
+    }
+
+    /// Controls the use of certificate validation.
+    pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
+        match &mut self.tls {
+            #[cfg(feature = "native-tls")]
+            TlsBackend::NativeTls {
+                accept_invalid_certs,
+            } => {
+                *accept_invalid_certs = accept;
+            }
+            #[cfg(feature = "rustls")]
+            TlsBackend::Rustls {
+                accept_invalid_certs,
+                ..
+            } => {
+                *accept_invalid_certs = accept;
+            }
+            _ => {
+                let _ = accept;
+            }
+        }
         self
     }
 

@@ -9,8 +9,9 @@ use std::{
     time::Duration,
 };
 
-use futures_util::{Stream, StreamExt, TryStreamExt};
+use futures_util::StreamExt;
 use http::{HeaderMap, HeaderName, HeaderValue};
+use http_body_util::BodyExt;
 use nyquest_interface::{
     Request, Result,
     r#async::{AsyncBackend, AsyncClient, AsyncResponse, BoxedStream},
@@ -30,8 +31,6 @@ pub fn register() {
 /// * `caching_behavior`
 /// * `use_default_proxy`
 /// * `follow_redirects`
-/// * `max_response_buffer_size`
-/// * `ignore_certificate_errors`
 pub struct CyperAsyncBackend;
 
 impl AsyncBackend for CyperAsyncBackend {
@@ -48,6 +47,11 @@ impl AsyncBackend for CyperAsyncBackend {
         ));
         #[cfg(feature = "cookies")]
         let builder = builder.cookie_store(options.use_cookies);
+        let builder = if options.ignore_certificate_errors {
+            builder.danger_accept_invalid_certs(true)
+        } else {
+            builder
+        };
         let client = builder.build();
         let base_url = if let Some(url) = options.base_url {
             Some(Url::parse(&url).map_err(|_| nyquest_interface::Error::InvalidUrl)?)
@@ -59,6 +63,7 @@ impl AsyncBackend for CyperAsyncBackend {
             base_url,
             user_agent: options.user_agent,
             timeout: options.request_timeout,
+            max_buffer_size: options.max_response_buffer_size,
         })
     }
 }
@@ -70,10 +75,11 @@ pub struct CyperAsyncClient {
     user_agent: Option<String>,
     base_url: Option<Url>,
     timeout: Option<Duration>,
+    max_buffer_size: Option<u64>,
 }
 
 impl AsyncClient for CyperAsyncClient {
-    type Response = crate::Response;
+    type Response = CyperAsyncResponse;
 
     async fn request(&self, req: Request<BoxedStream>) -> Result<Self::Response> {
         let fut = async {
@@ -153,7 +159,11 @@ impl AsyncClient for CyperAsyncClient {
                 Ok(builder.send().await?)
             }
         };
-        SendWrapper::new(fut).await
+        let resp = SendWrapper::new(fut).await?;
+        Ok(CyperAsyncResponse {
+            resp,
+            max_buffer_size: self.max_buffer_size,
+        })
     }
 }
 
@@ -177,13 +187,19 @@ impl futures_util::Stream for WrapBoxedStream {
     }
 }
 
-impl futures_util::AsyncRead for crate::Response {
+/// An implementation of [`nyquest_interface::r#async::AsyncResponse`].
+pub struct CyperAsyncResponse {
+    resp: crate::Response,
+    max_buffer_size: Option<u64>,
+}
+
+impl futures_util::AsyncRead for CyperAsyncResponse {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<std::io::Result<usize>> {
-        match self.poll_next(cx) {
+        match self.resp.poll_next_unpin(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(Ok(bytes))) => {
                 let len = bytes.len().min(buf.len());
@@ -202,17 +218,18 @@ impl futures_util::AsyncRead for crate::Response {
     }
 }
 
-impl AsyncResponse for crate::Response {
+impl AsyncResponse for CyperAsyncResponse {
     fn status(&self) -> u16 {
-        self.status().as_u16()
+        self.resp.status().as_u16()
     }
 
     fn content_length(&self) -> Option<u64> {
-        self.content_length()
+        self.resp.content_length()
     }
 
     fn get_header(&self, header: &str) -> Result<Vec<String>> {
         Ok(self
+            .resp
             .headers()
             .get_all(header)
             .into_iter()
@@ -227,17 +244,26 @@ impl AsyncResponse for crate::Response {
             .map(|b| String::from_utf8_lossy(&b).to_string())
     }
 
-    async fn bytes(self: Pin<&mut Self>) -> Result<Vec<u8>> {
-        Ok(self
-            .map(|res| match res {
-                Ok(bytes) => Result::Ok(bytes.to_vec()),
-                Err(e) => Err(e.into()),
-            })
-            .try_collect::<Vec<Vec<u8>>>()
-            .await?
-            .into_iter()
-            .flatten()
-            .collect())
+    async fn bytes(mut self: Pin<&mut Self>) -> Result<Vec<u8>> {
+        let mut bufs = vec![];
+        let mut collected_size = 0;
+        loop {
+            let Some(frame) = self.resp.body.frame().await else {
+                break;
+            };
+            let Ok(frame) = frame?.into_data() else {
+                continue;
+            };
+            if self
+                .max_buffer_size
+                .is_some_and(|max| collected_size + frame.len() > max as usize)
+            {
+                return Err(nyquest_interface::Error::ResponseTooLarge);
+            }
+            collected_size += frame.len();
+            bufs.push(frame);
+        }
+        Ok(bufs.concat())
     }
 }
 
