@@ -3,7 +3,7 @@
 //! This support is experimental. Not all features are implemented.
 //! It might break regardless of semver in future releases.
 
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 
 use compio::bytes::Bytes;
 use futures_util::Stream;
@@ -34,14 +34,13 @@ pub struct CyperBackend;
 
 impl CyperBackend {
     pub(crate) fn create_client(&self, options: ClientOptions) -> Result<CyperClient> {
-        let builder = crate::ClientBuilder::new().default_headers(HeaderMap::from_iter(
-            options.default_headers.into_iter().map(|(k, v)| {
-                (
-                    HeaderName::from_bytes(k.as_bytes()).unwrap(),
-                    HeaderValue::from_str(&v).unwrap(),
-                )
-            }),
-        ));
+        let builder = crate::ClientBuilder::new().default_headers({
+            let mut headers = HeaderMap::new();
+            for (k, v) in options.default_headers {
+                headers.insert(convert_header_name(k)?, convert_header_value(v)?);
+            }
+            headers
+        });
         #[cfg(feature = "cookies")]
         let builder = builder.cookie_store(options.use_cookies);
         let builder = if options.ignore_certificate_errors {
@@ -97,17 +96,13 @@ impl CyperClient {
                 None => Url::parse(&req.relative_uri),
             }
             .map_err(|_| nyquest_interface::Error::InvalidUrl)?;
-            let builder = self
-                .client
-                .request(method, url)?
-                .headers(HeaderMap::from_iter(
-                    req.additional_headers.into_iter().map(|(k, v)| {
-                        (
-                            HeaderName::from_bytes(k.as_bytes()).unwrap(),
-                            HeaderValue::from_str(&v).unwrap(),
-                        )
-                    }),
-                ));
+            let builder = self.client.request(method, url)?.headers({
+                let mut headers = HeaderMap::new();
+                for (k, v) in req.additional_headers {
+                    headers.insert(convert_header_name(k)?, convert_header_value(v)?);
+                }
+                headers
+            });
             let (body, content_type) = match req.body {
                 Some(body) => match body {
                     nyquest_interface::Body::Bytes {
@@ -121,10 +116,53 @@ impl CyperClient {
                         stream,
                         content_type,
                     } => (crate::body::Body::stream(stream), Some(content_type)),
-                    _ => {
-                        return Err(nyquest_interface::Error::Io(std::io::Error::other(
-                            "Unsupported body type",
-                        )));
+                    nyquest_interface::Body::Form { fields } => {
+                        let body = serde_urlencoded::to_string(fields)
+                            .map_err(|e| nyquest_interface::Error::Io(std::io::Error::other(e)))?
+                            .into_bytes();
+                        (
+                            crate::body::Body::from(body),
+                            Some("application/x-www-form-urlencoded".into()),
+                        )
+                    }
+                    #[cfg(feature = "nyquest-multipart")]
+                    nyquest_interface::Body::Multipart { parts } => {
+                        let mut form = crate::multipart::Form::new();
+                        for part in parts {
+                            use std::iter;
+
+                            let headers = part
+                                .headers
+                                .into_iter()
+                                .map(|(k, v)| {
+                                    let value = convert_header_value(v)?;
+                                    Ok((convert_header_name(k)?, value))
+                                })
+                                .chain(iter::once(Ok((
+                                    http::header::CONTENT_TYPE,
+                                    convert_header_value(part.content_type)?,
+                                ))))
+                                .collect::<Result<HeaderMap>>()?;
+
+                            match part.body {
+                                nyquest_interface::PartBody::Bytes { content } => {
+                                    let mut part_builder = crate::multipart::Part::bytes(content);
+                                    if let Some(filename) = part.filename {
+                                        part_builder = part_builder.file_name(filename);
+                                    }
+                                    form = form.part(part.name, part_builder.headers(headers));
+                                }
+                                nyquest_interface::PartBody::Stream(stream) => {
+                                    let mut part_builder =
+                                        crate::multipart::Part::stream(crate::Body::stream(stream));
+                                    if let Some(filename) = part.filename {
+                                        part_builder = part_builder.file_name(filename);
+                                    }
+                                    form = form.part(part.name, part_builder.headers(headers));
+                                }
+                            }
+                        }
+                        (form.stream(), None)
                     }
                 },
                 None => (crate::body::Body::empty(), None),
@@ -133,7 +171,7 @@ impl CyperClient {
             let builder = if let Some(content_type) = content_type {
                 builder.header(
                     http::header::CONTENT_TYPE,
-                    HeaderValue::from_str(&content_type).unwrap(),
+                    convert_header_value(content_type)?,
                 )?
             } else {
                 builder
@@ -147,9 +185,11 @@ impl CyperClient {
                 builder
             };
             if let Some(timeout) = self.timeout {
-                Ok(compio::time::timeout(timeout, builder.send())
-                    .await
-                    .map_err(|_| nyquest_interface::Error::RequestTimeout)??)
+                Result::Ok(
+                    compio::time::timeout(timeout, builder.send())
+                        .await
+                        .map_err(|_| nyquest_interface::Error::RequestTimeout)??,
+                )
             } else {
                 Ok(builder.send().await?)
             }
@@ -215,6 +255,27 @@ fn to_io_error(err: crate::Error) -> std::io::Error {
     match err {
         crate::Error::System(e) => e,
         other_err => std::io::Error::other(format!("nyquest error: {}", other_err)),
+    }
+}
+
+fn convert_header_name(s: impl Into<Cow<'static, str>>) -> Result<HeaderName> {
+    let s = s.into();
+    match &s {
+        Cow::Borrowed(s) if !s.bytes().any(|c| c.is_ascii_uppercase()) => {
+            return Ok(HeaderName::from_static(s));
+        }
+        Cow::Borrowed(s) => HeaderName::from_bytes(s.as_bytes()),
+        Cow::Owned(s) => HeaderName::from_bytes(s.as_bytes()),
+    }
+    .map_err(|e| nyquest_interface::Error::Io(std::io::Error::other(e)))
+}
+
+fn convert_header_value(v: impl Into<Cow<'static, str>>) -> Result<HeaderValue> {
+    let v = v.into();
+    match v {
+        Cow::Borrowed(s) => Ok(HeaderValue::from_static(s)),
+        Cow::Owned(s) => HeaderValue::from_bytes(s.as_bytes())
+            .map_err(|e| nyquest_interface::Error::Io(std::io::Error::other(e))),
     }
 }
 

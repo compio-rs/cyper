@@ -27,6 +27,9 @@ mod http3;
 #[cfg(feature = "http3-altsvc")]
 mod altsvc;
 
+#[cfg(feature = "multipart")]
+pub mod multipart;
+
 #[cfg(feature = "nyquest")]
 pub mod nyquest;
 

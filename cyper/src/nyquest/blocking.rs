@@ -38,22 +38,46 @@ impl BlockingClient for CyperBlockingClient {
             method: req.method,
             relative_uri: req.relative_uri,
             additional_headers: req.additional_headers,
-            body: req.body.map(|body| match body {
-                Body::Stream {
-                    stream,
-                    content_type,
-                } => Body::Stream {
-                    stream: futures_util::stream::iter(WrapBoxedStream(stream)),
-                    content_type,
-                },
-                Body::Bytes {
-                    content,
-                    content_type,
-                } => Body::Bytes {
-                    content,
-                    content_type,
-                },
-                Body::Form { fields } => Body::Form { fields },
+            body: req.body.map(|body| {
+                match body {
+                    Body::Stream {
+                        stream,
+                        content_type,
+                    } => Body::Stream {
+                        stream: futures_util::stream::iter(WrapBoxedStream(stream)),
+                        content_type,
+                    },
+                    Body::Bytes {
+                        content,
+                        content_type,
+                    } => Body::Bytes {
+                        content,
+                        content_type,
+                    },
+                    Body::Form { fields } => Body::Form { fields },
+                    #[cfg(feature = "nyquest-multipart")]
+                    Body::Multipart { parts } => Body::Multipart {
+                        parts: parts
+                            .into_iter()
+                            .map(|part| nyquest_interface::Part {
+                                headers: part.headers,
+                                name: part.name,
+                                filename: part.filename,
+                                content_type: part.content_type,
+                                body: match part.body {
+                                    nyquest_interface::PartBody::Bytes { content } => {
+                                        nyquest_interface::PartBody::Bytes { content }
+                                    }
+                                    nyquest_interface::PartBody::Stream(s) => {
+                                        nyquest_interface::PartBody::Stream(
+                                            futures_util::stream::iter(WrapBoxedStream(s)),
+                                        )
+                                    }
+                                },
+                            })
+                            .collect(),
+                    },
+                }
             }),
         }))?;
         Ok(CyperBlockingResponse {

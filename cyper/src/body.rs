@@ -98,6 +98,14 @@ impl Body {
             BodyInner::Stream(_) => None,
         }
     }
+
+    /// Returns the content length of the body, if known.
+    pub fn content_length(&self) -> Option<u64> {
+        match &self.0 {
+            BodyInner::Bytes(b) => Some(b.len() as u64),
+            BodyInner::Stream(_) => None,
+        }
+    }
 }
 
 impl hyper::body::Body for Body {
@@ -152,6 +160,29 @@ impl From<File> for Body {
     }
 }
 
+#[cfg(feature = "stream")]
+impl Stream for Body {
+    type Item = Result<Bytes, crate::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        use hyper::body::Body;
+
+        let frame = unsafe { self.as_mut().map_unchecked_mut(|this| &mut this.0) }.poll_frame(cx);
+        match frame {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Some(Ok(frame))) => {
+                if let Ok(data) = frame.into_data() {
+                    Poll::Ready(Some(Ok(data)))
+                } else {
+                    self.poll_next(cx)
+                }
+            }
+            Poll::Ready(Some(Err(err))) => Poll::Ready(Some(Err(err))),
+            Poll::Ready(None) => Poll::Ready(None),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum ResponseBody {
     Incoming(Incoming),
@@ -200,15 +231,15 @@ impl Stream for ResponseBody {
         loop {
             return match std::task::ready!(hyper::body::Body::poll_frame(self.as_mut(), cx)) {
                 Some(Ok(frame)) => {
-                if let Ok(data) = frame.into_data() {
-                    Poll::Ready(Some(Ok(data)))
-                } else {
-                    continue;
+                    if let Ok(data) = frame.into_data() {
+                        Poll::Ready(Some(Ok(data)))
+                    } else {
+                        continue;
+                    }
                 }
-            }
-            Some(Err(err)) => Poll::Ready(Some(Err(err))),
+                Some(Err(err)) => Poll::Ready(Some(Err(err))),
                 None => Poll::Ready(None),
-            }
+            };
         }
     }
 }

@@ -35,7 +35,9 @@ encoding_rs = "0.8"
 futures-util = { workspace = true }
 http-body-util = "0.1.0"
 mime = "0.3"
+mime_guess = { version = "2.0", default-features = false, optional = true }
 once_cell = { version = "1", optional = true }
+percent-encoding = { version = "2.3", optional = true }
 send_wrapper = { workspace = true, features = ["futures"] }
 serde = "1"
 serde_json = { version = "1", optional = true }
@@ -76,6 +78,7 @@ http3 = [
 ]
 http3-altsvc = ["http3"]
 stream = []
+multipart = ["stream", "dep:mime_guess", "dep:percent-encoding"]
 all = [
     "cookies",
     "json",
@@ -85,11 +88,18 @@ all = [
     "http3",
     "http3-altsvc",
     "stream",
+    "multipart",
 ]
 
 nyquest = ["dep:nyquest-interface", "stream"]
 nyquest-async = ["nyquest", "nyquest/async", "nyquest-interface/async"]
 nyquest-blocking = ["nyquest", "nyquest/blocking", "nyquest-interface/blocking"]
+nyquest-multipart = [
+    "nyquest",
+    "multipart",
+    "nyquest/multipart",
+    "nyquest-interface/multipart",
+]
 
 once_cell_try = ["compio/once_cell_try"]
 nightly = ["once_cell_try", "cyper-core/nightly", "cyper-axum/nightly"]
@@ -97,6 +107,10 @@ nightly = ["once_cell_try", "cyper-core/nightly", "cyper-axum/nightly"]
 [[test]]
 name = "cookie"
 required-features = ["cookies"]
+
+[[test]]
+name = "multipart"
+required-features = ["multipart"]
 
 [[test]]
 name = "nyquest"

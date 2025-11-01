@@ -46,6 +46,26 @@ impl AsyncClient for CyperClient {
                         content_type,
                     },
                     Body::Form { fields } => Body::Form { fields },
+                    #[cfg(feature = "nyquest-multipart")]
+                    Body::Multipart { parts } => Body::Multipart {
+                        parts: parts
+                            .into_iter()
+                            .map(|part| nyquest_interface::Part {
+                                headers: part.headers,
+                                name: part.name,
+                                filename: part.filename,
+                                content_type: part.content_type,
+                                body: match part.body {
+                                    nyquest_interface::PartBody::Bytes { content } => {
+                                        nyquest_interface::PartBody::Bytes { content }
+                                    }
+                                    nyquest_interface::PartBody::Stream(s) => {
+                                        nyquest_interface::PartBody::Stream(WrapBoxedStream(s))
+                                    }
+                                },
+                            })
+                            .collect(),
+                    },
                 }),
             },
         )
