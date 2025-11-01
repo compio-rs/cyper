@@ -100,6 +100,7 @@ nyquest-multipart = [
     "nyquest/multipart",
     "nyquest-interface/multipart",
 ]
+nyquest-all = ["nyquest-async", "nyquest-blocking", "nyquest-multipart"]
 
 once_cell_try = ["compio/once_cell_try"]
 nightly = ["once_cell_try", "cyper-core/nightly", "cyper-axum/nightly"]
