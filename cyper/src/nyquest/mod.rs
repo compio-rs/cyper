@@ -81,7 +81,7 @@ impl CyperBackend {
     }
 }
 
-/// An implementation of nyquest client.
+#[doc(hidden)]
 #[derive(Clone)]
 pub struct CyperClient {
     client: crate::Client,
@@ -215,7 +215,7 @@ impl CyperClient {
     }
 }
 
-/// An implementation of nyquest response.
+#[doc(hidden)]
 pub struct CyperResponse {
     resp: crate::Response,
     max_buffer_size: Option<u64>,
