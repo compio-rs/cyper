@@ -107,7 +107,7 @@ nyquest-multipart = [
 nyquest-all = ["nyquest-async", "nyquest-blocking", "nyquest-multipart"]
 
 once_cell_try = ["compio/once_cell_try"]
-nightly = ["once_cell_try", "compio/nightly", "cyper-axum/nightly"]
+nightly = ["once_cell_try", "cyper-core/nightly", "cyper-axum/nightly"]
 
 [[test]]
 name = "cookie"

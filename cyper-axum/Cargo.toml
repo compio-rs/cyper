@@ -36,4 +36,4 @@ tokio = { version = "1", features = ["sync"] }
 default = []
 enable_log = ["compio-log/enable_log"]
 
-nightly = ["compio/nightly"]
+nightly = ["cyper-core/nightly"]

@@ -64,9 +64,14 @@ impl TlsBackend {
     }
 
     /// Sets whether to accept invalid certificates.
-    pub fn accept_invalid_certs(mut self, accept: bool) -> Self {
+    pub fn with_accept_invalid_certs(mut self, accept: bool) -> Self {
         self.accept_invalid_certs = accept;
         self
+    }
+
+    /// Returns whether invalid certificates are accepted.
+    pub fn accept_invalid_certs(&self) -> bool {
+        self.accept_invalid_certs
     }
 
     #[cfg(any(feature = "native-tls", feature = "rustls"))]

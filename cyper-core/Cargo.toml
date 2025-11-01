@@ -20,3 +20,8 @@ compio = { workspace = true, features = ["io-compat", "time"] }
 futures-util = { workspace = true }
 hyper = { workspace = true }
 send_wrapper = { workspace = true, features = ["futures"] }
+
+[features]
+default = []
+
+nightly = ["compio/nightly"]

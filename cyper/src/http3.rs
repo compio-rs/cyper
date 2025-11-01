@@ -42,14 +42,19 @@ struct DualEndpoint {
 }
 
 impl DualEndpoint {
-    fn client_builder() -> Result<ClientBuilder<compio::rustls::ClientConfig>> {
-        Ok(ClientBuilder::new_with_platform_verifier()?
-            .with_key_log()
-            .with_alpn_protocols(&["h3"]))
+    fn client_builder(
+        accept_invalid_certs: bool,
+    ) -> Result<ClientBuilder<compio::rustls::ClientConfig>> {
+        let builder = if accept_invalid_certs {
+            ClientBuilder::new_with_no_server_verification()
+        } else {
+            ClientBuilder::new_with_platform_verifier()?.with_key_log()
+        };
+        Ok(builder.with_alpn_protocols(&["h3"]))
     }
 
-    fn new() -> Result<Self> {
-        let client_config = Self::client_builder()?.build();
+    fn new(accept_invalid_certs: bool) -> Result<Self> {
+        let client_config = Self::client_builder(accept_invalid_certs)?.build();
 
         let v6sock = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))?;
         let dual_stack = v6sock.set_only_v6(false).is_ok();
@@ -112,17 +117,20 @@ impl DualEndpoint {
 #[derive(Debug, Clone)]
 struct Connector {
     endpoint: Arc<OnceLock<DualEndpoint>>,
+    accept_invalid_certs: bool,
 }
 
 impl Connector {
-    pub fn new() -> Self {
+    pub fn new(accept_invalid_certs: bool) -> Self {
         Self {
             endpoint: Arc::new(OnceLock::new()),
+            accept_invalid_certs,
         }
     }
 
     fn endpoint(&self) -> Result<&DualEndpoint> {
-        self.endpoint.get_or_try_init(DualEndpoint::new)
+        self.endpoint
+            .get_or_try_init(|| DualEndpoint::new(self.accept_invalid_certs))
     }
 
     pub async fn connect(
@@ -326,10 +334,10 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new() -> Self {
+    pub fn new(accept_invalid_certs: bool) -> Self {
         Self {
             pool: Pool::new(),
-            connector: Connector::new(),
+            connector: Connector::new(accept_invalid_certs),
         }
     }
 

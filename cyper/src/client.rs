@@ -233,6 +233,7 @@ impl ClientBuilder {
 
     /// Returns a `Client` that uses this `ClientBuilder` configuration.
     pub fn build(self) -> Client {
+        let accept_invalid_certs = self.tls.accept_invalid_certs();
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
             .timer(CompioTimer)
@@ -246,7 +247,7 @@ impl ClientBuilder {
         Client {
             client: Arc::new(client_ref),
             #[cfg(feature = "http3")]
-            h3_client: crate::http3::Client::new(),
+            h3_client: crate::http3::Client::new(accept_invalid_certs),
             #[cfg(feature = "http3-altsvc")]
             h3_hosts: crate::altsvc::KnownHosts::default(),
         }
@@ -283,7 +284,7 @@ impl ClientBuilder {
 
     /// Controls the use of certificate validation.
     pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
-        self.tls = self.tls.accept_invalid_certs(accept);
+        self.tls = self.tls.with_accept_invalid_certs(accept);
         self
     }
 
