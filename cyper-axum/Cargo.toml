@@ -17,14 +17,14 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 compio = { workspace = true, features = ["time"] }
 compio-log = "0.1.0"
-cyper-core = { workspace = true, features = ["server"] }
+cyper-core = { workspace = true }
 socket2 = { workspace = true }
 
 axum-core = { workspace = true }
 axum = { workspace = true, default-features = false }
 futures-util = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
-hyper-util = { workspace = true, features = ["service"] }
+hyper-util = { workspace = true, features = ["server-auto", "service"] }
 send_wrapper = { workspace = true, features = ["futures"] }
 tower = { workspace = true, features = ["util"] }
 tower-service = { workspace = true }
@@ -36,4 +36,4 @@ tokio = { version = "1", features = ["sync"] }
 default = []
 enable_log = ["compio-log/enable_log"]
 
-nightly = ["compio/nightly", "cyper-core/nightly"]
+nightly = ["compio/nightly"]

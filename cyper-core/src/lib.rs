@@ -6,13 +6,5 @@
 mod executor;
 pub use executor::*;
 
-#[cfg(feature = "client")]
-mod connector;
-#[cfg(feature = "client")]
-pub use connector::*;
-
-mod backend;
-pub use backend::*;
-
 mod stream;
 pub use stream::*;

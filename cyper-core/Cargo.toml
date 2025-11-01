@@ -17,25 +17,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 compio = { workspace = true, features = ["io-compat", "time"] }
 
-rustls-platform-verifier = { workspace = true, optional = true }
-
-cfg-if = { workspace = true }
 futures-util = { workspace = true }
 hyper = { workspace = true }
-hyper-util = { workspace = true, optional = true }
 send_wrapper = { workspace = true, features = ["futures"] }
-tower-service = { workspace = true, optional = true }
-
-[features]
-default = ["native-tls"]
-native-tls = ["compio/native-tls"]
-rustls = ["compio/rustls", "dep:rustls-platform-verifier"]
-
-client = ["hyper-util/client-legacy", "hyper-util/http1", "dep:tower-service"]
-server = ["hyper-util/server-auto"]
-
-http2 = ["hyper-util/http2"]
-
-all = ["native-tls", "rustls", "client", "server", "http2"]
-
-nightly = ["compio/nightly"]

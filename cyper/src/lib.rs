@@ -19,6 +19,15 @@ pub use response::*;
 mod into_url;
 pub use into_url::*;
 
+mod backend;
+pub(crate) use backend::*;
+
+mod connector;
+pub(crate) use connector::*;
+
+mod stream;
+pub(crate) use stream::*;
+
 mod util;
 
 #[cfg(feature = "http3")]

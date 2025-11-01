@@ -4,6 +4,7 @@ use {compio::rustls, std::sync::Arc};
 use {compio::tls::TlsConnector, std::io};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum TlsBackendInner {
     None,
     #[cfg(feature = "native-tls")]
@@ -35,41 +36,6 @@ pub struct TlsBackend {
 }
 
 impl TlsBackend {
-    /// Creates a TLS backend with no TLS support.
-    pub fn none() -> Self {
-        Self {
-            ty: TlsBackendInner::None,
-            accept_invalid_certs: false,
-        }
-    }
-
-    /// Creates a TLS backend with native-tls.
-    #[cfg(feature = "native-tls")]
-    pub fn native_tls() -> Self {
-        Self {
-            ty: TlsBackendInner::NativeTls,
-            accept_invalid_certs: false,
-        }
-    }
-
-    /// Creates a TLS backend with rustls.
-    #[cfg(feature = "rustls")]
-    pub fn rustls() -> Self {
-        Self {
-            ty: TlsBackendInner::Rustls(None),
-            accept_invalid_certs: false,
-        }
-    }
-
-    /// Creates a TLS backend with rustls and a custom configuration.
-    #[cfg(feature = "rustls")]
-    pub fn rustls_with_config(config: Arc<rustls::ClientConfig>) -> Self {
-        Self {
-            ty: TlsBackendInner::Rustls(Some(config)),
-            accept_invalid_certs: false,
-        }
-    }
-
     /// Sets the TLS backend to native-tls.
     #[cfg(feature = "native-tls")]
     pub fn with_native_tls(self) -> Self {

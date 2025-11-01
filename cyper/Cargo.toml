@@ -19,17 +19,20 @@ compio = { workspace = true, features = ["time", "bytes"] }
 compio-quic = { workspace = true, optional = true, features = [
     "platform-verifier",
 ] }
-cyper-core = { workspace = true, features = ["client"] }
+cyper-core = { workspace = true }
 
 http = "1.0.0"
 hyper = { workspace = true, features = ["client", "http1"] }
-hyper-util = { workspace = true }
+hyper-util = { workspace = true, features = ["client-legacy", "http1"] }
 h3 = { version = "0.0.8", optional = true }
 
 nyquest-interface = { version = "0.3.0", optional = true }
 
+rustls-platform-verifier = { workspace = true, optional = true }
+
 async-stream = "0.3"
 base64 = "0.22"
+cfg-if = { workspace = true }
 cookie_store = { version = "0.22", optional = true }
 encoding_rs = "0.8"
 futures-util = { workspace = true }
@@ -44,6 +47,7 @@ serde_json = { version = "1", optional = true }
 serde_urlencoded = "0.7"
 socket2 = { workspace = true, optional = true }
 thiserror = "2"
+tower-service = { workspace = true }
 url = "2"
 
 [dev-dependencies]
@@ -63,11 +67,11 @@ tower = { workspace = true }
 
 [features]
 default = ["native-tls"]
-native-tls = ["cyper-core/native-tls"]
-rustls = ["cyper-core/rustls"]
+native-tls = ["compio/native-tls"]
+rustls = ["compio/rustls", "dep:rustls-platform-verifier"]
 cookies = ["dep:cookie_store"]
 json = ["dep:serde_json"]
-http2 = ["hyper-util/http2", "cyper-core/http2"]
+http2 = ["hyper-util/http2"]
 http3 = [
     "dep:compio-quic",
     "dep:h3",
@@ -103,7 +107,7 @@ nyquest-multipart = [
 nyquest-all = ["nyquest-async", "nyquest-blocking", "nyquest-multipart"]
 
 once_cell_try = ["compio/once_cell_try"]
-nightly = ["once_cell_try", "cyper-core/nightly", "cyper-axum/nightly"]
+nightly = ["once_cell_try", "compio/nightly", "cyper-axum/nightly"]
 
 [[test]]
 name = "cookie"

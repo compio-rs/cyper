@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use cyper_core::{CompioExecutor, CompioTimer, Connector, TlsBackend};
+use cyper_core::{CompioExecutor, CompioTimer};
 use http::header::Entry;
 use hyper::{HeaderMap, Method, Uri};
 use url::Url;
 #[cfg(feature = "cookies")]
 use {compio::bytes::Bytes, cookie_store::CookieStore, http::HeaderValue, std::sync::RwLock};
 
-use crate::{Body, IntoUrl, Request, RequestBuilder, Response, Result};
+use crate::{Body, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend};
 
 /// An asynchronous `Client` to make Requests with.
 #[derive(Debug, Clone)]
