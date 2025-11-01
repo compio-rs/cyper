@@ -1,7 +1,14 @@
 mod server;
 
+#[cfg(feature = "nyquest")]
+#[test]
+fn register_backend() {
+    cyper::nyquest::register();
+}
+
+#[cfg(feature = "nyquest-async")]
 #[compio::test]
-async fn response_text() {
+async fn response_text_async() {
     let server = server::http(move |_req| async { "Hello" }).await;
 
     cyper::nyquest::register();

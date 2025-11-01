@@ -1,8 +1,3 @@
-//! Adapters for [`nyquest_interface`].
-//!
-//! This support is experimental. Not all features are implemented.
-//! It might break regardless of semver in future releases.
-
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -20,20 +15,9 @@ use nyquest_interface::{
 use send_wrapper::SendWrapper;
 use url::Url;
 
-/// Register `cyper` as a backend for [`nyquest_interface`].
-pub fn register() {
-    nyquest_interface::register_backend(CyperAsyncBackend);
-}
+use super::CyperBackend;
 
-/// An implementation of [`nyquest_interface::r#async::AsyncBackend`].
-///
-/// ## Missing features
-/// * `caching_behavior`
-/// * `use_default_proxy`
-/// * `follow_redirects`
-pub struct CyperAsyncBackend;
-
-impl AsyncBackend for CyperAsyncBackend {
+impl AsyncBackend for CyperBackend {
     type AsyncClient = CyperAsyncClient;
 
     async fn create_async_client(&self, options: ClientOptions) -> Result<Self::AsyncClient> {
@@ -264,18 +248,5 @@ impl AsyncResponse for CyperAsyncResponse {
             bufs.push(frame);
         }
         Ok(bufs.concat())
-    }
-}
-
-impl From<crate::Error> for nyquest_interface::Error {
-    fn from(err: crate::Error) -> Self {
-        match err {
-            crate::Error::BadScheme(_) => nyquest_interface::Error::InvalidUrl,
-            crate::Error::System(e) => nyquest_interface::Error::Io(e),
-            crate::Error::Timeout => nyquest_interface::Error::RequestTimeout,
-            _ => {
-                nyquest_interface::Error::Io(std::io::Error::other(format!("cyper error: {}", err)))
-            }
-        }
     }
 }
