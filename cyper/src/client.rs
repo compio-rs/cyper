@@ -263,21 +263,27 @@ impl ClientBuilder {
     /// Force using the native TLS backend.
     #[cfg(feature = "native-tls")]
     pub fn use_native_tls(mut self) -> Self {
-        self.tls = TlsBackend::NativeTls;
+        self.tls = self.tls.with_native_tls();
         self
     }
 
     /// Force using the Rustls TLS backend.
     #[cfg(feature = "rustls")]
     pub fn use_rustls_default(mut self) -> Self {
-        self.tls = TlsBackend::Rustls(None);
+        self.tls = self.tls.with_rustls();
         self
     }
 
     /// Force using the Rustls TLS backend.
     #[cfg(feature = "rustls")]
     pub fn use_rustls(mut self, config: std::sync::Arc<compio::tls::rustls::ClientConfig>) -> Self {
-        self.tls = TlsBackend::Rustls(Some(config));
+        self.tls = self.tls.with_rustls_config(config);
+        self
+    }
+
+    /// Controls the use of certificate validation.
+    pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
+        self.tls = self.tls.accept_invalid_certs(accept);
         self
     }
 

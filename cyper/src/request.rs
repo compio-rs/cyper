@@ -7,6 +7,8 @@ use hyper::{
 use serde::Serialize;
 use url::Url;
 
+#[cfg(feature = "multipart")]
+use crate::multipart;
 use crate::{Body, Client, Response, Result};
 
 /// A request which can be executed with `Client::execute()`.
@@ -189,6 +191,26 @@ impl RequestBuilder {
     pub fn body<T: Into<Body>>(mut self, body: T) -> RequestBuilder {
         *self.request.body_mut() = body.into();
         self
+    }
+
+    /// Sends a multipart/form-data body.
+    ///
+    /// In addition to the request's body, the Content-Type and Content-Length
+    /// fields are appropriately set.
+    #[cfg(feature = "multipart")]
+    pub fn multipart(self, mut multipart: multipart::Form) -> Result<RequestBuilder> {
+        let mut builder = self.header(
+            CONTENT_TYPE,
+            format!("multipart/form-data; boundary={}", multipart.boundary()).as_str(),
+        )?;
+
+        builder = match multipart.compute_length() {
+            Some(length) => builder.header(http::header::CONTENT_LENGTH, length)?,
+            None => builder,
+        };
+
+        *builder.request.body_mut() = multipart.stream();
+        Ok(builder)
     }
 
     /// Modify the query string of the URL.

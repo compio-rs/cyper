@@ -14,7 +14,7 @@ use crate::{ResponseBody, Result};
 #[derive(Debug)]
 pub struct Response {
     pub(super) res: hyper::Response<()>,
-    body: ResponseBody,
+    pub(crate) body: ResponseBody,
     url: Url,
 }
 
