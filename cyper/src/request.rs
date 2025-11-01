@@ -195,7 +195,7 @@ impl RequestBuilder {
 
     /// Sends a multipart/form-data body.
     ///
-    /// In additional the request's body, the Content-Type and Content-Length
+    /// In addition to the request's body, the Content-Type and Content-Length
     /// fields are appropriately set.
     #[cfg(feature = "multipart")]
     pub fn multipart(self, mut multipart: multipart::Form) -> Result<RequestBuilder> {
