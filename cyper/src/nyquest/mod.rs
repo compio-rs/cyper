@@ -9,7 +9,10 @@ use compio::bytes::Bytes;
 use futures_util::Stream;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use http_body_util::BodyExt;
-use nyquest_interface::{Request, Result, client::ClientOptions};
+use nyquest_interface::{
+    Body as NyquestBody, Error as NyquestError, PartBody as NyquestPartBody, Request, Result,
+    client::ClientOptions,
+};
 use send_wrapper::SendWrapper;
 use url::Url;
 
@@ -28,12 +31,22 @@ mod blocking;
 ///
 /// ## Missing features
 /// * `caching_behavior`
-/// * `use_default_proxy`
-/// * `follow_redirects`
+/// * `use_default_proxy`: error on use
+/// * `follow_redirects`: error on use
 pub struct CyperBackend;
 
 impl CyperBackend {
     pub(crate) fn create_client(&self, options: ClientOptions) -> Result<CyperClient> {
+        if options.use_default_proxy {
+            return Err(NyquestError::Io(std::io::Error::other(
+                "cyper nyquest backend does not support use_default_proxy option",
+            )));
+        }
+        if options.follow_redirects {
+            return Err(NyquestError::Io(std::io::Error::other(
+                "cyper nyquest backend does not support follow_redirects option",
+            )));
+        }
         let builder = crate::ClientBuilder::new().default_headers({
             let mut headers = HeaderMap::new();
             for (k, v) in options.default_headers {
@@ -50,7 +63,7 @@ impl CyperBackend {
         };
         let client = builder.build();
         let base_url = if let Some(url) = options.base_url {
-            Some(Url::parse(&url).map_err(|_| nyquest_interface::Error::InvalidUrl)?)
+            Some(Url::parse(&url).map_err(|_| NyquestError::InvalidUrl)?)
         } else {
             None
         };
@@ -95,7 +108,7 @@ impl CyperClient {
                 Some(base) => base.join(&req.relative_uri),
                 None => Url::parse(&req.relative_uri),
             }
-            .map_err(|_| nyquest_interface::Error::InvalidUrl)?;
+            .map_err(|_| NyquestError::InvalidUrl)?;
             let builder = self.client.request(method, url)?.headers({
                 let mut headers = HeaderMap::new();
                 for (k, v) in req.additional_headers {
@@ -105,20 +118,20 @@ impl CyperClient {
             });
             let (body, content_type) = match req.body {
                 Some(body) => match body {
-                    nyquest_interface::Body::Bytes {
+                    NyquestBody::Bytes {
                         content,
                         content_type,
                     } => (
                         crate::body::Body::from(content.into_owned()),
                         Some(content_type),
                     ),
-                    nyquest_interface::Body::Stream {
+                    NyquestBody::Stream {
                         stream,
                         content_type,
                     } => (crate::body::Body::stream(stream), Some(content_type)),
-                    nyquest_interface::Body::Form { fields } => {
+                    NyquestBody::Form { fields } => {
                         let body = serde_urlencoded::to_string(fields)
-                            .map_err(|e| nyquest_interface::Error::Io(std::io::Error::other(e)))?
+                            .map_err(|e| NyquestError::Io(std::io::Error::other(e)))?
                             .into_bytes();
                         (
                             crate::body::Body::from(body),
@@ -126,7 +139,7 @@ impl CyperClient {
                         )
                     }
                     #[cfg(feature = "nyquest-multipart")]
-                    nyquest_interface::Body::Multipart { parts } => {
+                    NyquestBody::Multipart { parts } => {
                         let mut form = crate::multipart::Form::new();
                         for part in parts {
                             use std::iter;
@@ -145,14 +158,14 @@ impl CyperClient {
                                 .collect::<Result<HeaderMap>>()?;
 
                             match part.body {
-                                nyquest_interface::PartBody::Bytes { content } => {
+                                NyquestPartBody::Bytes { content } => {
                                     let mut part_builder = crate::multipart::Part::bytes(content);
                                     if let Some(filename) = part.filename {
                                         part_builder = part_builder.file_name(filename);
                                     }
                                     form = form.part(part.name, part_builder.headers(headers));
                                 }
-                                nyquest_interface::PartBody::Stream(stream) => {
+                                NyquestPartBody::Stream(stream) => {
                                     let mut part_builder =
                                         crate::multipart::Part::stream(crate::Body::stream(stream));
                                     if let Some(filename) = part.filename {
@@ -188,7 +201,7 @@ impl CyperClient {
                 Result::Ok(
                     compio::time::timeout(timeout, builder.send())
                         .await
-                        .map_err(|_| nyquest_interface::Error::RequestTimeout)??,
+                        .map_err(|_| NyquestError::RequestTimeout)??,
                 )
             } else {
                 Ok(builder.send().await?)
@@ -242,7 +255,7 @@ impl CyperResponse {
                 .max_buffer_size
                 .is_some_and(|max| collected_size + frame.len() > max as usize)
             {
-                return Err(nyquest_interface::Error::ResponseTooLarge);
+                return Err(NyquestError::ResponseTooLarge);
             }
             collected_size += frame.len();
             bufs.push(frame);
@@ -267,7 +280,7 @@ fn convert_header_name(s: impl Into<Cow<'static, str>>) -> Result<HeaderName> {
         Cow::Borrowed(s) => HeaderName::from_bytes(s.as_bytes()),
         Cow::Owned(s) => HeaderName::from_bytes(s.as_bytes()),
     }
-    .map_err(|e| nyquest_interface::Error::Io(std::io::Error::other(e)))
+    .map_err(|e| NyquestError::Io(std::io::Error::other(e)))
 }
 
 fn convert_header_value(v: impl Into<Cow<'static, str>>) -> Result<HeaderValue> {
@@ -275,19 +288,17 @@ fn convert_header_value(v: impl Into<Cow<'static, str>>) -> Result<HeaderValue> 
     match v {
         Cow::Borrowed(s) => Ok(HeaderValue::from_static(s)),
         Cow::Owned(s) => HeaderValue::from_bytes(s.as_bytes())
-            .map_err(|e| nyquest_interface::Error::Io(std::io::Error::other(e))),
+            .map_err(|e| NyquestError::Io(std::io::Error::other(e))),
     }
 }
 
-impl From<crate::Error> for nyquest_interface::Error {
+impl From<crate::Error> for NyquestError {
     fn from(err: crate::Error) -> Self {
         match err {
-            crate::Error::BadScheme(_) => nyquest_interface::Error::InvalidUrl,
-            crate::Error::System(e) => nyquest_interface::Error::Io(e),
-            crate::Error::Timeout => nyquest_interface::Error::RequestTimeout,
-            _ => {
-                nyquest_interface::Error::Io(std::io::Error::other(format!("cyper error: {}", err)))
-            }
+            crate::Error::BadScheme(_) => NyquestError::InvalidUrl,
+            crate::Error::System(e) => NyquestError::Io(e),
+            crate::Error::Timeout => NyquestError::RequestTimeout,
+            _ => NyquestError::Io(std::io::Error::other(format!("cyper error: {}", err))),
         }
     }
 }

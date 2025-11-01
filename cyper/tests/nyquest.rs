@@ -1,5 +1,7 @@
 use std::sync::Once;
 
+use nyquest::{ClientBuilder, Request};
+
 mod server;
 
 static REGISTER: Once = Once::new();
@@ -16,14 +18,20 @@ fn register_backend() {
     register(); // should not panic
 }
 
+fn builder() -> ClientBuilder {
+    register();
+    ClientBuilder::default().no_proxy().no_redirects()
+}
+
 #[cfg(feature = "nyquest-async")]
 #[compio::test]
 async fn response_text_async() {
     let server = server::http(move |_req| async { "Hello" }).await;
 
-    register();
+    let client = builder().build_async().await.unwrap();
 
-    let text = nyquest::r#async::get(format!("http://{}/text", server.addr()))
+    let text = client
+        .request(Request::get(format!("http://{}/text", server.addr())))
         .await
         .unwrap()
         .text()
@@ -42,9 +50,10 @@ async fn response_text_blocking() {
     let (tx, rx) = oneshot::channel();
 
     let handle = std::thread::spawn(move || {
-        register();
+        let client = builder().build_blocking().unwrap();
 
-        let text = nyquest::blocking::get(format!("http://{}/text", server.addr()))
+        let text = client
+            .request(Request::get(format!("http://{}/text", server.addr())))
             .unwrap()
             .text()
             .unwrap();
@@ -63,8 +72,6 @@ async fn response_text_blocking() {
 #[compio::test]
 async fn multipart_form() {
     use http_body_util::BodyExt;
-
-    register();
 
     let form = nyquest::r#async::Body::multipart([nyquest::Part::new_with_content_type(
         "text",
@@ -86,11 +93,10 @@ async fn multipart_form() {
 
     let url = format!("http://{}/multipart/1", server.addr());
 
-    let res = nyquest::ClientBuilder::default()
-        .build_async()
-        .await
-        .unwrap()
-        .request(nyquest::Request::post(url).with_body(form))
+    let client = builder().build_async().await.unwrap();
+
+    let res = client
+        .request(Request::post(url).with_body(form))
         .await
         .unwrap();
 
