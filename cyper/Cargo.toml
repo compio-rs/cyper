@@ -1,6 +1,6 @@
 [package]
 name = "cyper"
-version = "0.6.0"
+version = "0.6.1"
 description = "HTTP client library based on compio and hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
