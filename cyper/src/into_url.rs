@@ -12,7 +12,7 @@ impl IntoUrl for Url {
         if self.has_host() {
             Ok(self)
         } else {
-            Err(crate::Error::BadScheme(self))
+            Err(crate::Error::InvalidUrl(self))
         }
     }
 }

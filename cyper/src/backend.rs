@@ -1,7 +1,10 @@
+#[cfg(any(feature = "native-tls", feature = "rustls"))]
+use {
+    crate::{Error, Result},
+    compio::tls::TlsConnector,
+};
 #[cfg(feature = "rustls")]
 use {compio::rustls, std::sync::Arc};
-#[cfg(any(feature = "native-tls", feature = "rustls"))]
-use {compio::tls::TlsConnector, std::io};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -75,11 +78,9 @@ impl TlsBackend {
     }
 
     #[cfg(any(feature = "native-tls", feature = "rustls"))]
-    pub(crate) fn create_connector(&self) -> io::Result<TlsConnector> {
+    pub(crate) fn create_connector(&self) -> Result<TlsConnector> {
         match &self.ty {
-            TlsBackendInner::None => Err(io::Error::other(
-                "could not create TLS connector without TLS backend",
-            )),
+            TlsBackendInner::None => Err(Error::NoTlsBackend),
             #[cfg(feature = "native-tls")]
             TlsBackendInner::NativeTls => Ok(TlsConnector::from(
                 compio::tls::native_tls::TlsConnector::builder()
@@ -89,8 +90,7 @@ impl TlsBackend {
                         &["http/1.1"]
                     })
                     .danger_accept_invalid_certs(self.accept_invalid_certs)
-                    .build()
-                    .map_err(io::Error::other)?,
+                    .build()?,
             )),
             #[cfg(feature = "rustls")]
             TlsBackendInner::Rustls(config) => {
@@ -164,7 +164,7 @@ impl TlsBackend {
                             .with_custom_certificate_verifier(Arc::new(NoVerifier))
                             .with_no_client_auth()
                     } else {
-                        ClientConfig::with_platform_verifier().map_err(io::Error::other)?
+                        ClientConfig::with_platform_verifier()?
                     };
                     config.alpn_protocols = if cfg!(feature = "http2") {
                         vec![b"h2".into(), b"http/1.1".into()]

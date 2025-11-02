@@ -14,7 +14,7 @@ use mime::Mime;
 use percent_encoding::{self, AsciiSet, NON_ALPHANUMERIC};
 use send_wrapper::SendWrapper;
 
-use super::Body;
+use crate::Body;
 
 /// An async multipart/form-data request.
 pub struct Form {

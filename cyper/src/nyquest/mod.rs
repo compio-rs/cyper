@@ -268,7 +268,7 @@ impl CyperResponse {
 fn to_io_error(err: crate::Error) -> std::io::Error {
     match err {
         crate::Error::System(e) => e,
-        other_err => std::io::Error::other(format!("nyquest error: {}", other_err)),
+        other_err => std::io::Error::other(other_err),
     }
 }
 
@@ -296,10 +296,10 @@ fn convert_header_value(v: impl Into<Cow<'static, str>>) -> Result<HeaderValue> 
 impl From<crate::Error> for NyquestError {
     fn from(err: crate::Error) -> Self {
         match err {
-            crate::Error::BadScheme(_) => NyquestError::InvalidUrl,
+            crate::Error::BadScheme(_) | crate::Error::InvalidUrl(_) => NyquestError::InvalidUrl,
             crate::Error::System(e) => NyquestError::Io(e),
             crate::Error::Timeout => NyquestError::RequestTimeout,
-            _ => NyquestError::Io(std::io::Error::other(format!("cyper error: {}", err))),
+            _ => NyquestError::Io(std::io::Error::other(err)),
         }
     }
 }

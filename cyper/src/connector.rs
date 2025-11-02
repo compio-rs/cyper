@@ -1,6 +1,5 @@
 use std::{
     future::Future,
-    io,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -28,8 +27,8 @@ impl Connector {
 }
 
 impl Service<Uri> for Connector {
-    type Error = io::Error;
-    type Future = Pin<Box<dyn Future<Output = io::Result<Self::Response>> + Send>>;
+    type Error = crate::Error;
+    type Future = Pin<Box<dyn Future<Output = crate::Result<Self::Response>> + Send>>;
     type Response = HttpStream;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {

@@ -16,7 +16,7 @@ use cyper_core::HyperStream;
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
 
-use crate::TlsBackend;
+use crate::{Error, Result, TlsBackend};
 
 #[allow(clippy::large_enum_variant)]
 enum HttpStreamInner {
@@ -26,7 +26,7 @@ enum HttpStreamInner {
 }
 
 impl HttpStreamInner {
-    pub async fn connect(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
+    pub async fn connect(uri: Uri, tls: TlsBackend) -> Result<Self> {
         let scheme = uri.scheme_str().unwrap_or("http");
         let host = uri.host().expect("there should be host");
         let port = uri.port_u16();
@@ -43,10 +43,7 @@ impl HttpStreamInner {
                 let connector = tls.create_connector()?;
                 Ok(Self::Tls(connector.connect(host, stream).await?))
             }
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "unsupported scheme",
-            )),
+            _ => Err(Error::BadScheme(scheme.to_string())),
         }
     }
 
@@ -117,7 +114,7 @@ pub struct HttpStream(HyperStream<HttpStreamInner>);
 
 impl HttpStream {
     /// Create [`HttpStream`] with target uri and TLS backend.
-    pub async fn connect(uri: Uri, tls: TlsBackend) -> io::Result<Self> {
+    pub async fn connect(uri: Uri, tls: TlsBackend) -> Result<Self> {
         Ok(Self::from_inner(HttpStreamInner::connect(uri, tls).await?))
     }
 

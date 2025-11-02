@@ -49,9 +49,15 @@ pub enum Error {
     /// The request is timeout.
     #[error("request timeout")]
     Timeout,
+    /// No TLS backend.
+    #[error("no TLS backend available")]
+    NoTlsBackend,
+    /// Invalid URL.
+    #[error("invalid URL: {0}")]
+    InvalidUrl(url::Url),
     /// Bad scheme.
     #[error("bad scheme: {0}")]
-    BadScheme(url::Url),
+    BadScheme(String),
     /// IO error occurs.
     #[error("system error: {0}")]
     System(#[from] std::io::Error),
@@ -74,6 +80,10 @@ pub enum Error {
     #[cfg(feature = "json")]
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
+    /// `native-tls` error.
+    #[cfg(feature = "native-tls")]
+    #[error("`native-tls` error: {0}")]
+    NativeTls(#[from] compio::native_tls::Error),
     /// Rustls error.
     #[cfg(feature = "http3")]
     #[error("`rustls` error: {0}")]
@@ -105,4 +115,4 @@ pub enum Error {
 }
 
 /// The result type used in `compio-http`.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
