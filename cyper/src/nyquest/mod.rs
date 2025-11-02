@@ -9,9 +9,10 @@ use compio::bytes::Bytes;
 use futures_util::Stream;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use http_body_util::BodyExt;
+#[cfg(feature = "nyquest-multipart")]
+use nyquest_interface::PartBody as NyquestPartBody;
 use nyquest_interface::{
-    Body as NyquestBody, Error as NyquestError, PartBody as NyquestPartBody, Request, Result,
-    client::ClientOptions,
+    Body as NyquestBody, Error as NyquestError, Request, Result, client::ClientOptions,
 };
 use send_wrapper::SendWrapper;
 use url::Url;
