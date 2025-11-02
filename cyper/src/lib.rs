@@ -85,7 +85,7 @@ pub enum Error {
     #[error("`native-tls` error: {0}")]
     NativeTls(#[from] compio::native_tls::Error),
     /// Rustls error.
-    #[cfg(feature = "http3")]
+    #[cfg(any(feature = "http3", feature = "rustls"))]
     #[error("`rustls` error: {0}")]
     Rustls(#[from] compio::rustls::Error),
     /// H3 connection error.

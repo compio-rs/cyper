@@ -16,7 +16,7 @@ Add `compio` and `cyper` as dependency:
 
 ```
 compio = { version = "0.16.0", features = ["macros"] }
-cyper = "0.6.1"
+cyper = "0.6.2"
 ```
 
 Then we can start a simple HTTP request:
