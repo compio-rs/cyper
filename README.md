@@ -16,7 +16,7 @@ Add `compio` and `cyper` as dependency:
 
 ```
 compio = { version = "0.16.0", features = ["macros"] }
-cyper = "0.5.0"
+cyper = "0.6.1"
 ```
 
 Then we can start a simple HTTP request:
@@ -46,9 +46,16 @@ async fn main() {
 - [x] cookies
 - [x] charset
 - [x] serde-json
+- [x] multipart
 - [ ] compression
   - [ ] gzip
   - [ ] brotli
+
+## Nyquest support
+`cyper` supports `nyquest` experimentally. Start with registering:
+```rust
+cyper::nyquest::register();
+```
 
 ## Contributing
 
