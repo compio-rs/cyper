@@ -1,7 +1,7 @@
 //! A mid level HTTP services for [`hyper`].
 
 #![warn(missing_docs)]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod executor;
 pub use executor::*;

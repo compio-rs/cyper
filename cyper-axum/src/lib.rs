@@ -4,7 +4,7 @@
 //! for `axum::serve`. See [`axum`] crate for its usage.
 
 #![warn(missing_docs)]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use std::{
     convert::Infallible,
