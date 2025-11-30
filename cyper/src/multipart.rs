@@ -180,7 +180,7 @@ impl Form {
         &mut self,
         name: T,
         part: Part,
-    ) -> impl Stream<Item = Result<Bytes, crate::Error>>
+    ) -> impl Stream<Item = Result<Bytes, crate::Error>> + use<T>
     where
         T: Into<Cow<'static, str>>,
     {

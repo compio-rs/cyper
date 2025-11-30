@@ -45,10 +45,10 @@ impl Client {
 
         #[cfg(feature = "cookies")]
         {
-            if headers.get(http::header::COOKIE).is_none() {
-                if let Some(cookie_store) = self.cookie_value_impl(&url) {
-                    headers.insert(http::header::COOKIE, cookie_store);
-                }
+            if headers.get(http::header::COOKIE).is_none()
+                && let Some(cookie_store) = self.cookie_value_impl(&url)
+            {
+                headers.insert(http::header::COOKIE, cookie_store);
             }
         }
 
@@ -85,17 +85,16 @@ impl Client {
                 self.send_h1h2_request(request, &url).await?
             };
             #[cfg(feature = "http3-altsvc")]
-            if let Some(alt_svc) = res.headers().get(http::header::ALT_SVC) {
-                if let Ok(alt_svc) = std::str::from_utf8(alt_svc.as_bytes()) {
-                    if let Ok(services) = crate::altsvc::parse(alt_svc) {
-                        match services {
-                            crate::altsvc::AltService::Clear => self.h3_hosts.clear(host),
-                            crate::altsvc::AltService::Services(services) => {
-                                for srv in services {
-                                    if self.h3_hosts.try_insert(host, &srv) {
-                                        break;
-                                    }
-                                }
+            if let Some(alt_svc) = res.headers().get(http::header::ALT_SVC)
+                && let Ok(alt_svc) = std::str::from_utf8(alt_svc.as_bytes())
+                && let Ok(services) = crate::altsvc::parse(alt_svc)
+            {
+                match services {
+                    crate::altsvc::AltService::Clear => self.h3_hosts.clear(host),
+                    crate::altsvc::AltService::Services(services) => {
+                        for srv in services {
+                            if self.h3_hosts.try_insert(host, &srv) {
+                                break;
                             }
                         }
                     }

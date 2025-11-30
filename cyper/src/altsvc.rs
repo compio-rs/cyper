@@ -133,11 +133,11 @@ impl KnownHosts {
 
     pub fn find(&self, host: &str) -> bool {
         let mut map = self.map.lock().unwrap();
-        if let Some((host, entry)) = map.remove_entry(host) {
-            if (Instant::now() - entry.insert_time).as_secs() <= entry.max_age {
-                map.insert(host, entry);
-                return true;
-            }
+        if let Some((host, entry)) = map.remove_entry(host)
+            && (Instant::now() - entry.insert_time).as_secs() <= entry.max_age
+        {
+            map.insert(host, entry);
+            return true;
         }
         false
     }

@@ -96,10 +96,10 @@ impl DualEndpoint {
     }
 
     fn end(&self, is_v4: bool) -> &Endpoint {
-        if let Some(v4end) = &self.v4end {
-            if is_v4 {
-                return v4end;
-            }
+        if let Some(v4end) = &self.v4end
+            && is_v4
+        {
+            return v4end;
         }
         &self.v6end
     }
@@ -183,11 +183,11 @@ impl PoolClient {
         let (head, req_body) = req.into_parts();
         let mut req = Request::from_parts(head, ());
 
-        if let Some(n) = req_body.size_hint().exact() {
-            if n > 0 {
-                req.headers_mut()
-                    .insert(http::header::CONTENT_LENGTH, n.into());
-            }
+        if let Some(n) = req_body.size_hint().exact()
+            && n > 0
+        {
+            req.headers_mut()
+                .insert(http::header::CONTENT_LENGTH, n.into());
         }
 
         let mut stream = self.inner.send_request(req).await?;
