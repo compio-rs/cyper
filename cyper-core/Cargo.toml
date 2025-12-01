@@ -1,6 +1,6 @@
 [package]
 name = "cyper-core"
-version = "0.6.0"
+version = "0.7.0"
 description = "Core adaptors and services for compio running on hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
