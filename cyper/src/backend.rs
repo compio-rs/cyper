@@ -34,6 +34,7 @@ impl Default for TlsBackendInner {
 /// Represents TLS backend options.
 #[derive(Debug, Clone, Default)]
 pub struct TlsBackend {
+    #[allow(dead_code)]
     ty: TlsBackendInner,
     accept_invalid_certs: bool,
 }

@@ -1,6 +1,6 @@
 [package]
 name = "cyper"
-version = "0.7.0"
+version = "0.7.1"
 description = "HTTP client library based on compio and hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
@@ -51,7 +51,7 @@ tower-service = { workspace = true }
 url = "2"
 
 [dev-dependencies]
-compio = { workspace = true, features = ["macros"] }
+compio = { workspace = true, default-features = true, features = ["macros"] }
 cyper-axum = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 

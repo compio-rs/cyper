@@ -56,6 +56,7 @@ pub(crate) fn replace_headers(dst: &mut HeaderMap, src: HeaderMap) {
     }
 }
 
+#[cfg(feature = "multipart")]
 pub(crate) fn fast_random() -> u64 {
     use std::{
         cell::Cell,

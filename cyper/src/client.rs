@@ -232,6 +232,7 @@ impl ClientBuilder {
 
     /// Returns a `Client` that uses this `ClientBuilder` configuration.
     pub fn build(self) -> Client {
+        #[allow(unused)]
         let accept_invalid_certs = self.tls.accept_invalid_certs();
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
