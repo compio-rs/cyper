@@ -55,7 +55,7 @@ compio = { workspace = true, default-features = true, features = ["macros"] }
 cyper-axum = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 
-nyquest = { version = "0.3.0" }
+nyquest = { version = "0.4.0" }
 
 axum = { workspace = true }
 clap = { version = "4", features = ["derive"] }
