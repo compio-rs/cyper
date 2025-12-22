@@ -21,7 +21,7 @@ cyper-core = { workspace = true }
 socket2 = { workspace = true }
 
 axum-core = { workspace = true }
-axum = { workspace = true, default-features = false }
+axum = { workspace = true, default-features = false, features = ["http1"] }
 futures-util = { workspace = true }
 hyper = { workspace = true, features = ["server"] }
 hyper-util = { workspace = true, features = ["server-auto", "service"] }
@@ -35,5 +35,6 @@ tokio = { version = "1", features = ["sync"] }
 [features]
 default = []
 enable_log = ["compio-log/enable_log"]
+http2 = ["axum/http2"]
 
 nightly = ["cyper-core/nightly"]

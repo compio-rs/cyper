@@ -299,8 +299,12 @@ where
                 let hyper_service = TowerToHyperService::new(tower_service);
 
                 compio::runtime::spawn(async move {
-                    match Builder::new(CompioExecutor)
-                        // upgrades needed for websockets
+                    #[allow(unused_mut)]
+                    let mut builder = Builder::new(CompioExecutor);
+                    // CONNECT protocol needed for HTTP/2 websockets
+                    #[cfg(feature = "http2")]
+                    builder.http2().enable_connect_protocol();
+                    match builder
                         .serve_connection_with_upgrades(io, ServiceSendWrapper::new(hyper_service))
                         .await
                     {
