@@ -26,7 +26,7 @@ hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, features = ["client-legacy", "http1"] }
 h3 = { version = "0.0.8", optional = true }
 
-nyquest-interface = { version = "0.3.0", optional = true }
+nyquest-interface = { version = "0.4.0", optional = true }
 
 rustls-platform-verifier = { workspace = true, optional = true }
 
@@ -55,7 +55,7 @@ compio = { workspace = true, default-features = true, features = ["macros"] }
 cyper-axum = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 
-nyquest = { version = "0.3.0" }
+nyquest = "0.4.0"
 
 axum = { workspace = true }
 clap = { version = "4", features = ["derive"] }
@@ -96,8 +96,16 @@ all = [
 ]
 
 nyquest = ["dep:nyquest-interface", "stream", "compio/fd-sync"]
-nyquest-async = ["nyquest", "nyquest/async", "nyquest-interface/async"]
-nyquest-blocking = ["nyquest", "nyquest/blocking", "nyquest-interface/blocking"]
+nyquest-async = [
+    "nyquest",
+    "nyquest/async-stream",
+    "nyquest-interface/async-stream",
+]
+nyquest-blocking = [
+    "nyquest",
+    "nyquest/blocking-stream",
+    "nyquest-interface/blocking-stream",
+]
 nyquest-multipart = [
     "nyquest",
     "multipart",
