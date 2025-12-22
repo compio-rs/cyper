@@ -161,7 +161,7 @@ async fn test_rustls() {
 async fn test_http3() {
     let resp = Client::builder()
         .build()
-        .get("https://www.example.com")
+        .get("https://http3check.net")
         .unwrap()
         .version(http::Version::HTTP_3)
         .send()
