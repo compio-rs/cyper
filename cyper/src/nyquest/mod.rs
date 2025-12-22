@@ -5,8 +5,6 @@
 
 use std::{borrow::Cow, time::Duration};
 
-use compio::bytes::Bytes;
-use futures_util::Stream;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use http_body_util::BodyExt;
 #[cfg(feature = "nyquest-multipart")]
@@ -93,7 +91,10 @@ pub struct CyperClient {
 }
 
 impl CyperClient {
-    pub(crate) async fn request<S: Stream<Item = crate::Result<Bytes>> + Send + 'static>(
+    pub(crate) async fn request<
+        #[cfg(any(feature = "nyquest-async-stream", feature = "nyquest-blocking-stream"))] S: futures_util::Stream<Item = crate::Result<compio::bytes::Bytes>> + Send + 'static,
+        #[cfg(not(any(feature = "nyquest-async-stream", feature = "nyquest-blocking-stream")))] S,
+    >(
         &self,
         req: Request<S>,
     ) -> Result<CyperResponse> {
@@ -129,10 +130,21 @@ impl CyperClient {
                         crate::body::Body::from(content.into_owned()),
                         Some(content_type),
                     ),
+                    #[cfg(any(
+                        feature = "nyquest-async-stream",
+                        feature = "nyquest-blocking-stream"
+                    ))]
                     NyquestBody::Stream {
                         stream,
                         content_type,
                     } => (crate::body::Body::stream(stream), Some(content_type)),
+                    #[cfg(not(any(
+                        feature = "nyquest-async-stream",
+                        feature = "nyquest-blocking-stream"
+                    )))]
+                    NyquestBody::Stream { .. } => {
+                        unreachable!("stream body is not supported without stream feature")
+                    }
                     NyquestBody::Form { fields } => {
                         let body = serde_urlencoded::to_string(fields)
                             .map_err(|e| NyquestError::Io(std::io::Error::other(e)))?

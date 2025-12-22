@@ -1,10 +1,14 @@
 use std::{io::Read, rc::Rc};
 
-use compio::{bytes::Bytes, runtime::Runtime};
+#[cfg(feature = "nyquest-blocking-stream")]
+use compio::bytes::Bytes;
+use compio::runtime::Runtime;
 use futures_util::StreamExt;
+#[cfg(feature = "nyquest-blocking-stream")]
+use nyquest_interface::{Body, Request};
 use nyquest_interface::{
-    Body, Request, Result,
-    blocking::{BlockingBackend, BlockingClient, BlockingResponse, BoxedStream},
+    Result,
+    blocking::{BlockingBackend, BlockingClient, BlockingResponse, Request as BlockingRequest},
     client::ClientOptions,
 };
 use send_wrapper::SendWrapper;
@@ -33,53 +37,58 @@ pub struct CyperBlockingClient {
 impl BlockingClient for CyperBlockingClient {
     type Response = CyperBlockingResponse;
 
-    fn request(&self, req: Request<BoxedStream>) -> Result<Self::Response> {
-        let resp = self.runtime.block_on(self.client.request(Request {
-            method: req.method,
-            relative_uri: req.relative_uri,
-            additional_headers: req.additional_headers,
-            body: req.body.map(|body| {
-                match body {
-                    Body::Stream {
-                        stream,
-                        content_type,
-                    } => Body::Stream {
-                        stream: futures_util::stream::iter(WrapBoxedStream(stream)),
-                        content_type,
-                    },
-                    Body::Bytes {
-                        content,
-                        content_type,
-                    } => Body::Bytes {
-                        content,
-                        content_type,
-                    },
-                    Body::Form { fields } => Body::Form { fields },
-                    #[cfg(feature = "nyquest-multipart")]
-                    Body::Multipart { parts } => Body::Multipart {
-                        parts: parts
-                            .into_iter()
-                            .map(|part| nyquest_interface::Part {
-                                headers: part.headers,
-                                name: part.name,
-                                filename: part.filename,
-                                content_type: part.content_type,
-                                body: match part.body {
-                                    nyquest_interface::PartBody::Bytes { content } => {
-                                        nyquest_interface::PartBody::Bytes { content }
-                                    }
-                                    nyquest_interface::PartBody::Stream(s) => {
-                                        nyquest_interface::PartBody::Stream(
-                                            futures_util::stream::iter(WrapBoxedStream(s)),
-                                        )
-                                    }
-                                },
-                            })
-                            .collect(),
-                    },
-                }
-            }),
-        }))?;
+    fn request(&self, req: BlockingRequest) -> Result<Self::Response> {
+        let resp = self.runtime.block_on(self.client.request(
+            #[cfg(not(feature = "nyquest-blocking-stream"))]
+            req,
+            #[cfg(feature = "nyquest-blocking-stream")]
+            Request {
+                method: req.method,
+                relative_uri: req.relative_uri,
+                additional_headers: req.additional_headers,
+                body: req.body.map(|body| {
+                    match body {
+                        Body::Stream {
+                            stream,
+                            content_type,
+                        } => Body::Stream {
+                            stream: futures_util::stream::iter(WrapBoxedStream(stream)),
+                            content_type,
+                        },
+                        Body::Bytes {
+                            content,
+                            content_type,
+                        } => Body::Bytes {
+                            content,
+                            content_type,
+                        },
+                        Body::Form { fields } => Body::Form { fields },
+                        #[cfg(feature = "nyquest-multipart")]
+                        Body::Multipart { parts } => Body::Multipart {
+                            parts: parts
+                                .into_iter()
+                                .map(|part| nyquest_interface::Part {
+                                    headers: part.headers,
+                                    name: part.name,
+                                    filename: part.filename,
+                                    content_type: part.content_type,
+                                    body: match part.body {
+                                        nyquest_interface::PartBody::Bytes { content } => {
+                                            nyquest_interface::PartBody::Bytes { content }
+                                        }
+                                        nyquest_interface::PartBody::Stream(s) => {
+                                            nyquest_interface::PartBody::Stream(
+                                                futures_util::stream::iter(WrapBoxedStream(s)),
+                                            )
+                                        }
+                                    },
+                                })
+                                .collect(),
+                        },
+                    }
+                }),
+            },
+        ))?;
         Ok(CyperBlockingResponse {
             resp,
             runtime: self.runtime.clone(),
@@ -87,8 +96,10 @@ impl BlockingClient for CyperBlockingClient {
     }
 }
 
-struct WrapBoxedStream(BoxedStream);
+#[cfg(feature = "nyquest-blocking-stream")]
+struct WrapBoxedStream(nyquest_interface::blocking::BoxedStream);
 
+#[cfg(feature = "nyquest-blocking-stream")]
 impl Iterator for WrapBoxedStream {
     type Item = crate::Result<Bytes>;
 

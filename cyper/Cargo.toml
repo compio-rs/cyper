@@ -95,14 +95,18 @@ all = [
     "multipart",
 ]
 
-nyquest = ["dep:nyquest-interface", "stream", "compio/fd-sync"]
-nyquest-async = [
-    "nyquest",
+nyquest = ["dep:nyquest-interface", "compio/fd-sync"]
+nyquest-async = ["nyquest", "nyquest/async", "nyquest-interface/async"]
+nyquest-async-stream = [
+    "stream",
+    "nyquest-async",
     "nyquest/async-stream",
     "nyquest-interface/async-stream",
 ]
-nyquest-blocking = [
-    "nyquest",
+nyquest-blocking = ["nyquest", "nyquest/blocking", "nyquest-interface/blocking"]
+nyquest-blocking-stream = [
+    "stream",
+    "nyquest-blocking",
     "nyquest/blocking-stream",
     "nyquest-interface/blocking-stream",
 ]
@@ -112,7 +116,11 @@ nyquest-multipart = [
     "nyquest/multipart",
     "nyquest-interface/multipart",
 ]
-nyquest-all = ["nyquest-async", "nyquest-blocking", "nyquest-multipart"]
+nyquest-all = [
+    "nyquest-async-stream",
+    "nyquest-blocking-stream",
+    "nyquest-multipart",
+]
 
 once_cell_try = ["compio/once_cell_try"]
 nightly = ["once_cell_try", "cyper-core/nightly", "cyper-axum/nightly"]

@@ -4,9 +4,11 @@ use std::{
 };
 
 use futures_util::StreamExt;
+#[cfg(feature = "nyquest-async-stream")]
+use nyquest_interface::{Body, Request};
 use nyquest_interface::{
-    Body, Request, Result,
-    r#async::{AsyncBackend, AsyncClient, AsyncResponse, BoxedStream},
+    Result,
+    r#async::{AsyncBackend, AsyncClient, AsyncResponse, Request as AsyncRequest},
     client::ClientOptions,
 };
 
@@ -23,9 +25,12 @@ impl AsyncBackend for CyperBackend {
 impl AsyncClient for CyperClient {
     type Response = CyperResponse;
 
-    async fn request(&self, req: Request<BoxedStream>) -> Result<Self::Response> {
+    async fn request(&self, req: AsyncRequest) -> Result<Self::Response> {
         CyperClient::request(
             self,
+            #[cfg(not(feature = "nyquest-async-stream"))]
+            req,
+            #[cfg(feature = "nyquest-async-stream")]
             Request {
                 method: req.method,
                 relative_uri: req.relative_uri,
@@ -73,8 +78,10 @@ impl AsyncClient for CyperClient {
     }
 }
 
-struct WrapBoxedStream(BoxedStream);
+#[cfg(feature = "nyquest-async-stream")]
+struct WrapBoxedStream(nyquest_interface::r#async::BoxedStream);
 
+#[cfg(feature = "nyquest-async-stream")]
 impl futures_util::Stream for WrapBoxedStream {
     type Item = crate::Result<compio::bytes::Bytes>;
 
