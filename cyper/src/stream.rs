@@ -4,7 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio::{buf::IoBuf, net::TcpStream, tls::MaybeTlsStream};
+use compio::{net::TcpStream, tls::MaybeTlsStream};
 use cyper_core::HyperStream;
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
@@ -79,7 +79,7 @@ impl Connection for HttpStream {
             .0
             .get_ref()
             .negotiated_alpn()
-            .map(|alpn| alpn.as_slice() == b"h2")
+            .map(|alpn| *alpn == *b"h2")
             .unwrap_or_default();
         if is_h2 { conn.negotiated_h2() } else { conn }
     }
