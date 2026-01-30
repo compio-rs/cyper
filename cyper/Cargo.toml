@@ -1,6 +1,6 @@
 [package]
 name = "cyper"
-version = "0.7.1"
+version = "0.8.0"
 description = "HTTP client library based on compio and hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
@@ -15,7 +15,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-compio = { workspace = true, features = ["time", "bytes", "tls"] }
+compio = { workspace = true, features = ["net", "fs", "time", "bytes", "tls"] }
 compio-quic = { workspace = true, optional = true, features = [
     "platform-verifier",
 ] }
@@ -95,7 +95,7 @@ all = [
     "multipart",
 ]
 
-nyquest = ["dep:nyquest-interface", "compio/fd-sync"]
+nyquest = ["dep:nyquest-interface", "compio/sync"]
 nyquest-async = ["nyquest", "nyquest/async", "nyquest-interface/async"]
 nyquest-async-stream = [
     "stream",

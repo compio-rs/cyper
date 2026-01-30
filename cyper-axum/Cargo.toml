@@ -1,6 +1,6 @@
 [package]
 name = "cyper-axum"
-version = "0.7.1"
+version = "0.8.0"
 description = "axum adaptor based on cyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
@@ -15,7 +15,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-compio = { workspace = true, features = ["time"] }
+compio = { workspace = true, features = ["net", "time"] }
 compio-log = "0.1.0"
 cyper-core = { workspace = true }
 socket2 = { workspace = true }
