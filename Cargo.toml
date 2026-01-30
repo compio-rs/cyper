@@ -10,8 +10,8 @@ license = "MIT"
 repository = "https://github.com/compio-rs/cyper"
 
 [workspace.dependencies]
-compio = { version = "0.17.0", default-features = false }
-compio-quic = "0.6.0"
+compio = { version = "0.18.0", default-features = false }
+compio-quic = "0.7.0"
 cyper-core = { path = "./cyper-core", default-features = false, version = "0.7.0" }
 cyper-axum = { path = "./cyper-axum", default-features = false, version = "0.7.0" }
 socket2 = "0.6"
