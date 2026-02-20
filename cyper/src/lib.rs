@@ -42,7 +42,7 @@ pub mod multipart;
 #[cfg(feature = "nyquest")]
 pub mod nyquest;
 
-/// The error type used in `compio-http`.
+/// The error type used in `cyper`.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -114,5 +114,5 @@ pub enum Error {
     QuicConnection(#[from] compio::quic::ConnectionError),
 }
 
-/// The result type used in `compio-http`.
+/// The result type used in `cyper`.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
