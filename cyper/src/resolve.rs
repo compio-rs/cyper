@@ -56,3 +56,44 @@ impl<T: Resolve> TypeErasedResolve for T {
         .boxed_local()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::Ipv4Addr;
+
+    use futures_util::stream;
+    use http::StatusCode;
+
+    use super::*;
+    use crate::Client;
+
+    struct TestResolver;
+
+    impl Resolve for TestResolver {
+        type Err = crate::Error;
+
+        async fn resolve(&self, _uri: &Uri) -> Result<impl Stream<Item = IpAddr> + '_, Self::Err> {
+            Ok(stream::iter([IpAddr::V4(Ipv4Addr::new(1, 0, 0, 1))]))
+        }
+    }
+
+    #[compio::test]
+    async fn test() {
+        // why use cloudflare IP?
+        // many well-known domain has a lot of IPs, they don't promise that IPs will not
+        // change, except CloudFlare one.one.one.one, it always has 2 IPs 1.1.1.1 and
+        // 1.0.0.1 at least, choose 1.0.0.1 instead of 1.1.1.1 can make most developers
+        // can run this test without change, because in some places due to outdated
+        // network settings, 1.1.1.1 cannot be accessed normally by developers.
+        let client = Client::builder().custom_resolver(TestResolver).build();
+
+        let resp = client
+            .get("https://one.one.one.one")
+            .unwrap()
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+}
