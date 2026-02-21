@@ -20,7 +20,7 @@ use compio::{
     },
     runtime::Runtime,
 };
-use futures_util::TryStreamExt;
+use futures_util::{Stream, StreamExt, TryStreamExt, future::Either, stream};
 use h3::error::ConnectionError;
 use http::{
     Request, Uri,
@@ -33,7 +33,7 @@ use once_cell::sync::OnceCell as OnceLock;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use url::Url;
 
-use crate::{Body, Error, Response, Result};
+use crate::{Body, Error, Response, Result, resolve::ArcResolver};
 
 #[derive(Debug)]
 struct DualEndpoint {
@@ -118,13 +118,15 @@ impl DualEndpoint {
 struct Connector {
     endpoint: Arc<OnceLock<DualEndpoint>>,
     accept_invalid_certs: bool,
+    resolver: Option<ArcResolver>,
 }
 
 impl Connector {
-    pub fn new(accept_invalid_certs: bool) -> Self {
+    pub fn new(accept_invalid_certs: bool, resolver: Option<ArcResolver>) -> Self {
         Self {
             endpoint: Arc::new(OnceLock::new()),
             accept_invalid_certs,
+            resolver,
         }
     }
 
@@ -141,14 +143,18 @@ impl Connector {
         SendRequest<OpenStreams, Bytes>,
     )> {
         let host = dest.host().expect("there should be host");
-        let server_name = host.trim_start_matches('[').trim_end_matches(']');
+        let server_name = host
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .to_string();
         let port = dest.port_u16().unwrap_or(443);
 
         let endpoint = self.endpoint()?;
 
         let mut err = None;
-        for remote in (host, port).to_socket_addrs_async().await? {
-            match Self::connect_impl(endpoint, remote, server_name).await {
+        let mut addr_stream = self.get_addr_stream(&dest, host, port).await?;
+        while let Some(remote) = addr_stream.next().await {
+            match Self::connect_impl(endpoint, remote, &server_name).await {
                 Ok(conn) => return Ok(compio::quic::h3::client::new(conn).await?),
                 Err(e) => err = Some(e),
             }
@@ -156,6 +162,27 @@ impl Connector {
         Err(err.unwrap_or_else(|| {
             Error::H3Client("failed to establish connection for HTTP/3 request".into())
         }))
+    }
+
+    async fn get_addr_stream<'a>(
+        &'a self,
+        uri: &'a Uri,
+        host: &'a str,
+        port: u16,
+    ) -> Result<impl Stream<Item = SocketAddr> + 'a> {
+        match &self.resolver {
+            None => {
+                let addrs = (host, port).to_socket_addrs_async().await?;
+                Ok(Either::Left(stream::iter(addrs)))
+            }
+
+            Some(resolver) => Ok(Either::Right(
+                resolver
+                    .resolve(uri)
+                    .await?
+                    .map(move |ip| SocketAddr::new(ip, port)),
+            )),
+        }
     }
 
     async fn connect_impl(
@@ -334,10 +361,10 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(accept_invalid_certs: bool) -> Self {
+    pub fn new(accept_invalid_certs: bool, resolver: Option<ArcResolver>) -> Self {
         Self {
             pool: Pool::new(),
-            connector: Connector::new(accept_invalid_certs),
+            connector: Connector::new(accept_invalid_certs, resolver),
         }
     }
 

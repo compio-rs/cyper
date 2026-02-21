@@ -1,15 +1,17 @@
 use std::{
     io,
+    net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
 };
 
 use compio::{net::TcpStream, tls::MaybeTlsStream};
 use cyper_core::HyperStream;
+use futures_util::StreamExt;
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
 
-use crate::{Error, Result, TlsBackend};
+use crate::{Error, Result, TlsBackend, resolve::ArcResolver};
 
 /// A HTTP stream wrapper, based on compio, and exposes [`hyper::rt`]
 /// interfaces.
@@ -17,26 +19,52 @@ pub struct HttpStream(HyperStream<MaybeTlsStream<TcpStream>>);
 
 impl HttpStream {
     /// Create [`HttpStream`] with target uri and TLS backend.
-    pub async fn connect(uri: Uri, tls: TlsBackend) -> Result<Self> {
+    pub async fn connect(uri: Uri, tls: TlsBackend, resolver: Option<ArcResolver>) -> Result<Self> {
         let scheme = uri.scheme_str().unwrap_or("http");
         let host = uri.host().expect("there should be host");
         let port = uri.port_u16();
         let stream = match scheme {
             "http" => {
-                let stream = TcpStream::connect((host, port.unwrap_or(80))).await?;
+                let port = port.unwrap_or(80);
+                let stream = Self::connect_tcp(&uri, host, port, resolver).await?;
                 // Ignore it.
                 let _tls = tls;
                 MaybeTlsStream::new_plain(stream)
             }
             #[cfg(any(feature = "native-tls", feature = "rustls"))]
             "https" => {
-                let stream = TcpStream::connect((host, port.unwrap_or(443))).await?;
+                let port = port.unwrap_or(443);
+                let stream = Self::connect_tcp(&uri, host, port, resolver).await?;
                 let connector = tls.create_connector()?;
                 MaybeTlsStream::new_tls(connector.connect(host, stream).await?)
             }
             _ => return Err(Error::BadScheme(scheme.to_string())),
         };
         Ok(Self(HyperStream::new(stream)))
+    }
+
+    async fn connect_tcp(
+        uri: &Uri,
+        host: &str,
+        port: u16,
+        resolver: Option<ArcResolver>,
+    ) -> Result<TcpStream> {
+        let stream = match resolver {
+            None => TcpStream::connect((host, port)).await?,
+
+            Some(resolver) => {
+                let addrs = resolver
+                    .resolve(uri)
+                    .await?
+                    .map(|ip| SocketAddr::new(ip, port))
+                    .collect::<Vec<_>>()
+                    .await;
+
+                TcpStream::connect(addrs.as_slice()).await?
+            }
+        };
+
+        Ok(stream)
     }
 }
 
