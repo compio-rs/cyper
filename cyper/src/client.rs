@@ -7,7 +7,10 @@ use url::Url;
 #[cfg(feature = "cookies")]
 use {compio::bytes::Bytes, cookie_store::CookieStore, http::HeaderValue, std::sync::RwLock};
 
-use crate::{Body, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend};
+use crate::{
+    Body, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend,
+    resolve::{ArcResolver, Resolve},
+};
 
 /// An asynchronous `Client` to make Requests with.
 #[derive(Debug, Clone)]
@@ -209,6 +212,7 @@ struct ClientInner {
 pub struct ClientBuilder {
     tls: TlsBackend,
     headers: HeaderMap,
+    resolver: Option<ArcResolver>,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
 }
@@ -225,6 +229,7 @@ impl ClientBuilder {
         Self {
             headers: HeaderMap::new(),
             tls: TlsBackend::default(),
+            resolver: None,
             #[cfg(feature = "cookies")]
             cookies: None,
         }
@@ -237,7 +242,7 @@ impl ClientBuilder {
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
             .timer(CompioTimer)
-            .build(Connector::new(self.tls));
+            .build(Connector::new(self.tls, self.resolver.clone()));
         let client_ref = ClientInner {
             client,
             headers: self.headers,
@@ -247,7 +252,7 @@ impl ClientBuilder {
         Client {
             client: Arc::new(client_ref),
             #[cfg(feature = "http3")]
-            h3_client: crate::http3::Client::new(accept_invalid_certs),
+            h3_client: crate::http3::Client::new(accept_invalid_certs, self.resolver),
             #[cfg(feature = "http3-altsvc")]
             h3_hosts: crate::altsvc::KnownHosts::default(),
         }
@@ -301,6 +306,12 @@ impl ClientBuilder {
         } else {
             self.cookies = None;
         }
+        self
+    }
+
+    /// Set the custom resolver for DNS resolution.
+    pub fn custom_resolver<R: Resolve + 'static>(mut self, resolver: R) -> Self {
+        self.resolver = Some(ArcResolver::new(resolver));
         self
     }
 }
