@@ -8,7 +8,7 @@ use hyper::Uri;
 use send_wrapper::SendWrapper;
 use tower_service::Service;
 
-use crate::{HttpStream, TlsBackend};
+use crate::{HttpStream, TlsBackend, resolve::ArcResolver};
 
 /// An HTTP connector service.
 ///
@@ -17,12 +17,13 @@ use crate::{HttpStream, TlsBackend};
 #[derive(Debug, Clone)]
 pub struct Connector {
     tls: TlsBackend,
+    resolver: Option<ArcResolver>,
 }
 
 impl Connector {
     /// Creates the connector with specific TLS backend.
-    pub fn new(tls: TlsBackend) -> Self {
-        Self { tls }
+    pub fn new(tls: TlsBackend, resolver: Option<ArcResolver>) -> Self {
+        Self { tls, resolver }
     }
 }
 
@@ -36,6 +37,10 @@ impl Service<Uri> for Connector {
     }
 
     fn call(&mut self, req: Uri) -> Self::Future {
-        Box::pin(SendWrapper::new(HttpStream::connect(req, self.tls.clone())))
+        Box::pin(SendWrapper::new(HttpStream::connect(
+            req,
+            self.tls.clone(),
+            self.resolver.clone(),
+        )))
     }
 }

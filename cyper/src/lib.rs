@@ -28,6 +28,9 @@ pub(crate) use connector::*;
 mod stream;
 pub(crate) use stream::*;
 
+/// DNS resolution
+pub mod resolve;
+
 mod util;
 
 #[cfg(feature = "http3")]
