@@ -205,12 +205,10 @@ impl PoolClient {
     }
 
     pub async fn send_request(&mut self, req: Request<Body>, url: Url) -> Result<Response> {
-        use hyper::body::Body as _;
-
         let (head, req_body) = req.into_parts();
         let mut req = Request::from_parts(head, ());
 
-        if let Some(n) = req_body.size_hint().exact()
+        if let Some(n) = hyper::body::Body::size_hint(&req_body).exact()
             && n > 0
         {
             req.headers_mut()
