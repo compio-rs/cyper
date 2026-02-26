@@ -5,7 +5,6 @@ description = "Core adaptors and services for compio running on hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
 edition = { workspace = true }
-authors = { workspace = true }
 readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }

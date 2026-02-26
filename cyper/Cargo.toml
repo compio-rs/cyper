@@ -5,7 +5,6 @@ description = "HTTP client library based on compio and hyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
 edition = { workspace = true }
-authors = { workspace = true }
 readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
