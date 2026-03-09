@@ -28,7 +28,7 @@ use cyper::Client;
 async fn main() {
     let client = Client::new();
     let response = client
-        .get("https://www.example.com/")
+        .get("https://compio.rs/")
         .unwrap()
         .send()
         .await

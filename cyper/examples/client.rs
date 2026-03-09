@@ -5,7 +5,7 @@ use http::Version;
 #[derive(Debug, Parser)]
 #[clap(about, version, author)]
 struct Options {
-    #[clap(default_value = "https://www.example.com/")]
+    #[clap(default_value = "https://compio.rs/")]
     url: String,
     #[clap(flatten)]
     ver: VersionOptions,

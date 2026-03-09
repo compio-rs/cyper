@@ -119,11 +119,7 @@ async fn response_json() {
 
 #[compio::test]
 async fn test_allowed_methods() {
-    let resp = Client::new()
-        .get("https://www.example.com")
-        .unwrap()
-        .send()
-        .await;
+    let resp = Client::new().get("https://compio.rs").unwrap().send().await;
 
     assert!(resp.is_ok());
 }
@@ -134,7 +130,7 @@ async fn test_native_tls() {
     let resp = Client::builder()
         .use_native_tls()
         .build()
-        .get("https://www.example.com")
+        .get("https://compio.rs")
         .unwrap()
         .send()
         .await
@@ -148,7 +144,7 @@ async fn test_rustls() {
     let resp = Client::builder()
         .use_rustls_default()
         .build()
-        .get("https://www.example.com")
+        .get("https://compio.rs")
         .unwrap()
         .send()
         .await
@@ -177,7 +173,7 @@ fn add_json_default_content_type_if_not_set_manually() {
     map.insert("body", "json");
     let content_type = http::HeaderValue::from_static("application/vnd.api+json");
     let req = Client::new()
-        .post("https://www.example.com/")
+        .post("https://compio.rs/")
         .expect("cannot create request builder")
         .header(CONTENT_TYPE, &content_type)
         .unwrap()
@@ -194,7 +190,7 @@ fn update_json_content_type_if_set_manually() {
     let mut map = HashMap::new();
     map.insert("body", "json");
     let req = Client::new()
-        .post("https://www.example.com/")
+        .post("https://compio.rs/")
         .expect("cannot create request builder")
         .json(&map)
         .unwrap()
