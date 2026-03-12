@@ -143,10 +143,12 @@ impl Connector {
         SendRequest<OpenStreams, Bytes>,
     )> {
         let host = dest.host().expect("there should be host");
-        let server_name = host
-            .trim_start_matches('[')
-            .trim_end_matches(']')
-            .to_string();
+        // `Uri::host()` includes brackets for IPv6, we must strip them.
+        let host = host
+            .strip_prefix('[')
+            .and_then(|h| h.strip_suffix(']'))
+            .unwrap_or(host);
+        let server_name = host.to_string();
         let port = dest.port_u16().unwrap_or(443);
 
         let endpoint = self.endpoint()?;

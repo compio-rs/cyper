@@ -22,6 +22,11 @@ impl HttpStream {
     pub async fn connect(uri: Uri, tls: TlsBackend, resolver: Option<ArcResolver>) -> Result<Self> {
         let scheme = uri.scheme_str().unwrap_or("http");
         let host = uri.host().expect("there should be host");
+        // `Uri::host()` includes brackets for IPv6, we must strip them.
+        let host = host
+            .strip_prefix('[')
+            .and_then(|h| h.strip_suffix(']'))
+            .unwrap_or(host);
         let port = uri.port_u16();
         let stream = match scheme {
             "http" => {
