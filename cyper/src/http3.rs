@@ -143,10 +143,11 @@ impl Connector {
         SendRequest<OpenStreams, Bytes>,
     )> {
         let host = dest.host().expect("there should be host");
-        let server_name = host
-            .trim_start_matches('[')
-            .trim_end_matches(']')
-            .to_string();
+        // `Uri::host()` includes brackets for IPv6, we must strip them.
+        let host = host
+            .strip_prefix('[')
+            .and_then(|h| h.strip_suffix(']'))
+            .unwrap_or(host);
         let port = dest.port_u16().unwrap_or(443);
 
         let endpoint = self.endpoint()?;
@@ -154,7 +155,7 @@ impl Connector {
         let mut err = None;
         let mut addr_stream = self.get_addr_stream(&dest, host, port).await?;
         while let Some(remote) = addr_stream.next().await {
-            match Self::connect_impl(endpoint, remote, &server_name).await {
+            match Self::connect_impl(endpoint, remote, host).await {
                 Ok(conn) => return Ok(compio::quic::h3::client::new(conn).await?),
                 Err(e) => err = Some(e),
             }
