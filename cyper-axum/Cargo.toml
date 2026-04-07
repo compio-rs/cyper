@@ -30,12 +30,16 @@ tower-service = { workspace = true }
 
 tokio = { version = "1", features = ["sync"] }
 
+tungstenite = { version = "0.28", default-features = false, optional = true }
+sha1 = { version = "0.10", optional = true }
+base64 = { version = "0.22", optional = true }
+
 
 [features]
-default = []
+default = ["ws"]
 enable_log = ["compio-log/enable_log"]
 http2 = ["axum/http2"]
-ws = ["axum/ws"]
+ws = ["dep:tungstenite", "dep:sha1", "dep:base64"]
 
 nightly = ["cyper-core/nightly"]
 
