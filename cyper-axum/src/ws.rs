@@ -44,13 +44,11 @@ use hyper::{
 };
 use send_wrapper::SendWrapper;
 use sha1::{Digest, Sha1};
-
-use self::rejection::*;
-
 // Re-export tungstenite types for convenience.
 pub use ts::protocol::frame::coding::CloseCode;
-pub use ts::protocol::CloseFrame;
-pub use ts::{Bytes, Message, Utf8Bytes};
+pub use ts::{Bytes, Message, Utf8Bytes, protocol::CloseFrame};
+
+use self::rejection::*;
 
 // ===== WebSocket =====
 
@@ -382,7 +380,7 @@ where
             if parts
                 .extensions
                 .get::<hyper::ext::Protocol>()
-                .map_or(true, |p| p.as_str() != "websocket")
+                .is_none_or(|p| p.as_str() != "websocket")
             {
                 return Err(InvalidProtocolPseudoheader.into());
             }

@@ -1,8 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use axum::{Router, response::Response, routing::any};
-use compio::net::TcpListener;
-use compio::ws::tungstenite::Message as TsMessage;
+use compio::{net::TcpListener, ws::tungstenite::Message as TsMessage};
 use cyper_axum::ws::{Message, WebSocket, WebSocketUpgrade};
 use futures_channel::oneshot;
 
@@ -49,11 +48,10 @@ async fn echo_handler(ws: WebSocketUpgrade) -> Response {
 async fn echo_socket(mut socket: WebSocket) {
     while let Some(Ok(msg)) = socket.recv().await {
         match msg {
-            Message::Text(_) | Message::Binary(_) => {
-                if socket.send(msg).await.is_err() {
-                    break;
-                }
+            Message::Text(_) | Message::Binary(_) if socket.send(msg.clone()).await.is_err() => {
+                break;
             }
+
             Message::Close(_) => break,
             _ => {}
         }
@@ -127,9 +125,9 @@ async fn ping_pong() {
     let (addr, _shutdown) = spawn_server(app).await;
     let mut ws = connect(addr).await;
 
-    ws.send(TsMessage::Ping(compio::ws::tungstenite::Bytes::from_static(
-        b"ping",
-    )))
+    ws.send(TsMessage::Ping(
+        compio::ws::tungstenite::Bytes::from_static(b"ping"),
+    ))
     .await
     .unwrap();
     let msg = ws.read().await.unwrap();

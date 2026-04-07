@@ -129,8 +129,7 @@ impl<S: hyper::rt::Read + Unpin> AsyncRead for CompioStream<S> {
 impl<S: hyper::rt::Write + Unpin> AsyncWrite for CompioStream<S> {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let result =
-            std::future::poll_fn(|cx| Pin::new(&mut self.0).poll_write(cx, buf.as_init()))
-                .await;
+            std::future::poll_fn(|cx| Pin::new(&mut self.0).poll_write(cx, buf.as_init())).await;
         BufResult(result, buf)
     }
 
