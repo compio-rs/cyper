@@ -216,7 +216,7 @@ async fn server_close() {
             if let Some(Ok(_msg)) = socket.recv().await {
                 socket
                     .close(Some(cyper_axum::ws::CloseFrame {
-                        code: cyper_axum::ws::close_code::NORMAL,
+                        code: cyper_axum::ws::CloseCode::Normal,
                         reason: "bye".into(),
                     }))
                     .await
