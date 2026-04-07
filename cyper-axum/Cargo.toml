@@ -36,7 +36,7 @@ base64 = { version = "0.22", optional = true }
 
 
 [features]
-default = ["ws"]
+default = []
 enable_log = ["compio-log/enable_log"]
 http2 = ["axum/http2"]
 ws = ["dep:tungstenite", "dep:sha1", "dep:base64"]
