@@ -108,7 +108,7 @@ impl<S: std::fmt::Debug> std::fmt::Debug for CompioStream<S> {
 
 impl<S: hyper::rt::Read + Unpin> AsyncRead for CompioStream<S> {
     async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
-        let result = futures_util::future::poll_fn(|cx| {
+        let result = std::future::poll_fn(|cx| {
             let uninit: &mut [MaybeUninit<u8>] = buf.as_uninit();
             let mut read_buf = hyper::rt::ReadBuf::uninit(uninit);
             ready!(Pin::new(&mut self.0).poll_read(cx, read_buf.unfilled()))?;
@@ -129,16 +129,16 @@ impl<S: hyper::rt::Read + Unpin> AsyncRead for CompioStream<S> {
 impl<S: hyper::rt::Write + Unpin> AsyncWrite for CompioStream<S> {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         let result =
-            futures_util::future::poll_fn(|cx| Pin::new(&mut self.0).poll_write(cx, buf.as_init()))
+            std::future::poll_fn(|cx| Pin::new(&mut self.0).poll_write(cx, buf.as_init()))
                 .await;
         BufResult(result, buf)
     }
 
     async fn flush(&mut self) -> io::Result<()> {
-        futures_util::future::poll_fn(|cx| Pin::new(&mut self.0).poll_flush(cx)).await
+        std::future::poll_fn(|cx| Pin::new(&mut self.0).poll_flush(cx)).await
     }
 
     async fn shutdown(&mut self) -> io::Result<()> {
-        futures_util::future::poll_fn(|cx| Pin::new(&mut self.0).poll_shutdown(cx)).await
+        std::future::poll_fn(|cx| Pin::new(&mut self.0).poll_shutdown(cx)).await
     }
 }

@@ -32,10 +32,10 @@
 //! # let _: Router = app;
 //! ```
 
-use std::{borrow::Cow, future::Future};
+use std::{borrow::Cow, collections::BTreeSet, future::Future};
 
 use axum_core::{body::Body, extract::FromRequestParts, response::Response};
-use compio_ws::tungstenite::{self as ts, protocol::WebSocketConfig};
+use compio::ws::tungstenite::{self as ts, protocol::WebSocketConfig};
 use cyper_core::CompioStream;
 use hyper::{
     Method, StatusCode, Version,
@@ -326,7 +326,7 @@ impl From<Message> for Vec<u8> {
 ///
 /// Use [`recv`](Self::recv) and [`send`](Self::send) to communicate.
 pub struct WebSocket {
-    inner: compio_ws::WebSocketStream<CompioStream<hyper::upgrade::Upgraded>>,
+    inner: compio::ws::WebSocketStream<CompioStream<hyper::upgrade::Upgraded>>,
     protocol: Option<HeaderValue>,
 }
 
@@ -419,7 +419,6 @@ impl OnFailedUpgrade for DefaultOnFailedUpgrade {
 /// For HTTP/1.1 requests, this extractor requires the request method to be
 /// `GET`; in later versions, `CONNECT` is used instead. To support both, it
 /// should be used with [`any`](axum::routing::any).
-#[cfg_attr(docsrs, doc(cfg(feature = "ws")))]
 #[must_use]
 pub struct WebSocketUpgrade<F = DefaultOnFailedUpgrade> {
     config: WebSocketConfig,
@@ -427,7 +426,7 @@ pub struct WebSocketUpgrade<F = DefaultOnFailedUpgrade> {
     sec_websocket_key: Option<HeaderValue>,
     on_upgrade: hyper::upgrade::OnUpgrade,
     on_failed_upgrade: F,
-    sec_websocket_protocol: Option<HeaderValue>,
+    sec_websocket_protocol: BTreeSet<HeaderValue>,
 }
 
 impl<F> std::fmt::Debug for WebSocketUpgrade<F> {
@@ -499,30 +498,38 @@ impl<F> WebSocketUpgrade<F> {
         I: IntoIterator,
         I::Item: Into<Cow<'static, str>>,
     {
-        if let Some(req_protocols) = self
-            .sec_websocket_protocol
-            .as_ref()
-            .and_then(|p| p.to_str().ok())
-        {
-            self.protocol = protocols
-                .into_iter()
-                .map(Into::into)
-                .find(|protocol| {
-                    req_protocols
-                        .split(',')
-                        .any(|req_protocol| req_protocol.trim() == protocol.as_ref())
-                })
-                .map(|protocol| match protocol {
-                    Cow::Owned(s) => HeaderValue::from_str(&s).unwrap(),
-                    Cow::Borrowed(s) => HeaderValue::from_static(s),
-                });
-        }
+        self.protocol = protocols
+            .into_iter()
+            .map(Into::into)
+            .find(|proto| {
+                let Ok(proto) = HeaderValue::from_str(proto) else {
+                    return false;
+                };
+                self.sec_websocket_protocol.contains(&proto)
+            })
+            .map(|protocol| match protocol {
+                Cow::Owned(s) => HeaderValue::from_str(&s).unwrap(),
+                Cow::Borrowed(s) => HeaderValue::from_static(s),
+            });
 
         self
     }
 
-    /// Return the selected protocol after calling
-    /// [`protocols`](Self::protocols).
+    /// Return the WebSocket subprotocols requested by the client.
+    pub fn requested_protocols(&self) -> impl Iterator<Item = &HeaderValue> {
+        self.sec_websocket_protocol.iter()
+    }
+
+    /// Set the chosen WebSocket subprotocol.
+    ///
+    /// Another method, [`protocols()`](Self::protocols), also sets the chosen
+    /// WebSocket subprotocol. If both methods are called, only the latter call
+    /// takes effect.
+    pub fn set_selected_protocol(&mut self, protocol: HeaderValue) {
+        self.protocol = Some(protocol);
+    }
+
+    /// Return the selected WebSocket subprotocol, if one has been chosen.
     pub fn selected_protocol(&self) -> Option<&HeaderValue> {
         self.protocol.as_ref()
     }
@@ -565,7 +572,7 @@ impl<F> WebSocketUpgrade<F> {
             };
 
             let stream = CompioStream::new(upgraded);
-            let ws = compio_ws::WebSocketStream::from_raw_socket(
+            let ws = compio::ws::WebSocketStream::from_raw_socket(
                 stream,
                 ts::protocol::Role::Server,
                 config,
@@ -664,7 +671,16 @@ where
             .remove::<hyper::upgrade::OnUpgrade>()
             .ok_or(ConnectionNotUpgradable)?;
 
-        let sec_websocket_protocol = parts.headers.get(header::SEC_WEBSOCKET_PROTOCOL).cloned();
+        let sec_websocket_protocol = parts
+            .headers
+            .get_all(header::SEC_WEBSOCKET_PROTOCOL)
+            .iter()
+            .flat_map(|val| val.as_bytes().split(|&b| b == b','))
+            .map(|proto| {
+                HeaderValue::from_bytes(proto.trim_ascii())
+                    .expect("substring of HeaderValue is valid HeaderValue")
+            })
+            .collect();
 
         Ok(Self {
             config: Default::default(),

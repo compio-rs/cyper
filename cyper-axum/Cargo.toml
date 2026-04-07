@@ -9,10 +9,6 @@ readme = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
-
 [dependencies]
 compio = { workspace = true, features = ["net", "time"] }
 compio-log = "0.1.0"
@@ -30,7 +26,6 @@ tower-service = { workspace = true }
 
 tokio = { version = "1", features = ["sync"] }
 
-compio-ws = { workspace = true, optional = true }
 sha1 = { version = "0.10", optional = true }
 base64 = { version = "0.22", optional = true }
 
@@ -39,13 +34,12 @@ base64 = { version = "0.22", optional = true }
 default = []
 enable_log = ["compio-log/enable_log"]
 http2 = ["axum/http2"]
-ws = ["dep:compio-ws", "dep:sha1", "dep:base64"]
+ws = ["compio/ws", "dep:sha1", "dep:base64"]
 
 nightly = ["cyper-core/nightly"]
 
 [dev-dependencies]
-compio = { workspace = true, default-features = true, features = ["macros"] }
-compio-ws = { workspace = true }
+compio = { workspace = true, default-features = true, features = ["macros", "ws"] }
 futures-channel = { workspace = true }
 
 [[test]]

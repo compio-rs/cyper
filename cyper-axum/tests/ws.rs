@@ -2,7 +2,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use axum::{Router, response::Response, routing::any};
 use compio::net::TcpListener;
-use compio_ws::tungstenite::Message as TsMessage;
+use compio::ws::tungstenite::Message as TsMessage;
 use cyper_axum::ws::{Message, WebSocket, WebSocketUpgrade};
 use futures_channel::oneshot;
 
@@ -32,9 +32,9 @@ async fn spawn_server(app: Router) -> (SocketAddr, oneshot::Sender<()>) {
 }
 
 /// Connect a compio-ws client to the given address at `/ws`.
-async fn connect(addr: SocketAddr) -> compio_ws::WebSocketStream<compio::net::TcpStream> {
+async fn connect(addr: SocketAddr) -> compio::ws::WebSocketStream<compio::net::TcpStream> {
     let stream = compio::net::TcpStream::connect(addr).await.unwrap();
-    let (ws, _resp) = compio_ws::client_async(format!("ws://{addr}/ws"), stream)
+    let (ws, _resp) = compio::ws::client_async(format!("ws://{addr}/ws"), stream)
         .await
         .expect("WebSocket handshake failed");
     ws
@@ -81,7 +81,7 @@ async fn echo_binary() {
     let (addr, _shutdown) = spawn_server(app).await;
     let mut ws = connect(addr).await;
 
-    let data = compio_ws::tungstenite::Bytes::from_static(b"\x00\x01\x02\x03");
+    let data = compio::ws::tungstenite::Bytes::from_static(b"\x00\x01\x02\x03");
     ws.send(TsMessage::Binary(data.clone())).await.unwrap();
     let msg = ws.read().await.unwrap();
     assert_eq!(msg, TsMessage::Binary(data));
@@ -127,7 +127,7 @@ async fn ping_pong() {
     let (addr, _shutdown) = spawn_server(app).await;
     let mut ws = connect(addr).await;
 
-    ws.send(TsMessage::Ping(compio_ws::tungstenite::Bytes::from_static(
+    ws.send(TsMessage::Ping(compio::ws::tungstenite::Bytes::from_static(
         b"ping",
     )))
     .await
@@ -135,7 +135,7 @@ async fn ping_pong() {
     let msg = ws.read().await.unwrap();
     assert_eq!(
         msg,
-        TsMessage::Pong(compio_ws::tungstenite::Bytes::from_static(b"ping"))
+        TsMessage::Pong(compio::ws::tungstenite::Bytes::from_static(b"ping"))
     );
 
     ws.close(None).await.ok();
@@ -154,8 +154,8 @@ async fn graceful_close() {
     let msg = ws.read().await.unwrap();
     assert_eq!(msg, TsMessage::Text("before close".into()));
 
-    ws.close(Some(compio_ws::tungstenite::protocol::CloseFrame {
-        code: compio_ws::tungstenite::protocol::frame::coding::CloseCode::Normal,
+    ws.close(Some(compio::ws::tungstenite::protocol::CloseFrame {
+        code: compio::ws::tungstenite::protocol::frame::coding::CloseCode::Normal,
         reason: "done".into(),
     }))
     .await
@@ -186,7 +186,7 @@ async fn protocol_negotiation() {
     let (addr, _shutdown) = spawn_server(app).await;
 
     let stream = compio::net::TcpStream::connect(addr).await.unwrap();
-    let req = compio_ws::tungstenite::client::IntoClientRequest::into_client_request(format!(
+    let req = compio::ws::tungstenite::client::IntoClientRequest::into_client_request(format!(
         "ws://{addr}/ws"
     ))
     .unwrap();
@@ -194,7 +194,7 @@ async fn protocol_negotiation() {
     let mut req = req;
     req.headers_mut()
         .insert("Sec-WebSocket-Protocol", "echo, other".parse().unwrap());
-    let (mut ws, resp) = compio_ws::client_async(req, stream).await.unwrap();
+    let (mut ws, resp) = compio::ws::client_async(req, stream).await.unwrap();
 
     assert_eq!(
         resp.headers().get("Sec-WebSocket-Protocol").unwrap(),
@@ -239,7 +239,7 @@ async fn server_close() {
         TsMessage::Close(Some(frame)) => {
             assert_eq!(
                 frame.code,
-                compio_ws::tungstenite::protocol::frame::coding::CloseCode::Normal
+                compio::ws::tungstenite::protocol::frame::coding::CloseCode::Normal
             );
             assert_eq!(frame.reason.as_str(), "bye");
         }
