@@ -4,7 +4,9 @@
 //! for `axum::serve`. See [`axum`] crate for its usage.
 
 #![warn(missing_docs)]
-#![cfg_attr(docsrs, feature(doc_cfg))]
+
+#[cfg(feature = "ws")]
+pub mod ws;
 
 use std::{
     convert::Infallible,
