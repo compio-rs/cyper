@@ -30,7 +30,7 @@ tower-service = { workspace = true }
 
 tokio = { version = "1", features = ["sync"] }
 
-tungstenite = { version = "0.28", default-features = false, optional = true }
+compio-ws = { workspace = true, optional = true }
 sha1 = { version = "0.10", optional = true }
 base64 = { version = "0.22", optional = true }
 
@@ -39,13 +39,13 @@ base64 = { version = "0.22", optional = true }
 default = []
 enable_log = ["compio-log/enable_log"]
 http2 = ["axum/http2"]
-ws = ["dep:tungstenite", "dep:sha1", "dep:base64"]
+ws = ["dep:compio-ws", "dep:sha1", "dep:base64"]
 
 nightly = ["cyper-core/nightly"]
 
 [dev-dependencies]
 compio = { workspace = true, default-features = true, features = ["macros"] }
-compio-ws = "0.3"
+compio-ws = { workspace = true }
 futures-channel = { workspace = true }
 
 [[test]]

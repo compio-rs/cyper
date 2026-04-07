@@ -32,174 +32,20 @@
 //! # let _: Router = app;
 //! ```
 
-use std::{
-    borrow::Cow,
-    future::Future,
-    io,
-    pin::Pin,
-    task::{Poll, ready},
-};
+use std::{borrow::Cow, future::Future};
 
 use axum_core::{body::Body, extract::FromRequestParts, response::Response};
+use compio_ws::tungstenite::{self as ts, protocol::WebSocketConfig};
+use cyper_core::CompioStream;
 use hyper::{
     Method, StatusCode, Version,
     header::{self, HeaderMap, HeaderName, HeaderValue},
     http::request::Parts,
-    rt::{Read as _, Write as _},
-    upgrade::Upgraded,
 };
 use send_wrapper::SendWrapper;
 use sha1::{Digest, Sha1};
-use tungstenite::{self as ts, protocol::WebSocketConfig};
 
 use self::rejection::*;
-
-// ===== UpgradedIo =====
-
-const DEFAULT_BUF_SIZE: usize = 8 * 1024;
-const MAX_BUF_SIZE: usize = 64 * 1024 * 1024;
-
-/// Adapter that bridges `hyper::upgrade::Upgraded` (poll-based hyper::rt IO)
-/// to sync `Read + Write` with internal buffers, suitable for tungstenite.
-struct UpgradedIo {
-    upgraded: Upgraded,
-    read_buf: Vec<u8>,
-    read_pos: usize,
-    write_buf: Vec<u8>,
-}
-
-impl UpgradedIo {
-    fn new(upgraded: Upgraded) -> Self {
-        Self {
-            upgraded,
-            read_buf: Vec::with_capacity(DEFAULT_BUF_SIZE),
-            read_pos: 0,
-            write_buf: Vec::with_capacity(DEFAULT_BUF_SIZE),
-        }
-    }
-
-    fn available_read(&self) -> &[u8] {
-        &self.read_buf[self.read_pos..]
-    }
-
-    fn consume_read(&mut self, amt: usize) {
-        self.read_pos += amt;
-        if self.read_pos == self.read_buf.len() {
-            self.read_buf.clear();
-            self.read_pos = 0;
-            // Shrink if oversized
-            if self.read_buf.capacity() > DEFAULT_BUF_SIZE * 4 {
-                self.read_buf.shrink_to(DEFAULT_BUF_SIZE);
-            }
-        }
-    }
-
-    /// Fill read buffer by polling the upgraded connection.
-    async fn fill_read_buf(&mut self) -> io::Result<usize> {
-        // Compact: move unconsumed data to front
-        if self.read_pos > 0 {
-            self.read_buf.drain(..self.read_pos);
-            self.read_pos = 0;
-        }
-
-        // Ensure space
-        let current_len = self.read_buf.len();
-        if current_len >= MAX_BUF_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::OutOfMemory,
-                "read buffer size limit exceeded",
-            ));
-        }
-        let needed = DEFAULT_BUF_SIZE;
-        self.read_buf.reserve(needed);
-
-        let read = futures_util::future::poll_fn(|cx| {
-            // SAFETY: spare capacity is valid for writing
-            let spare = self.read_buf.spare_capacity_mut();
-            let mut buf = hyper::rt::ReadBuf::uninit(spare);
-            let filled_before = buf.filled().len();
-            ready!(Pin::new(&mut self.upgraded).poll_read(cx, buf.unfilled()))?;
-            let filled_after = buf.filled().len();
-            let n = filled_after - filled_before;
-            Poll::Ready(Ok::<_, io::Error>(n))
-        })
-        .await?;
-
-        // SAFETY: poll_read initialized `read` more bytes
-        unsafe {
-            self.read_buf.set_len(current_len + read);
-        }
-        Ok(read)
-    }
-
-    /// Flush write buffer to the upgraded connection.
-    async fn flush_write_buf(&mut self) -> io::Result<usize> {
-        let mut written_total = 0;
-        while written_total < self.write_buf.len() {
-            let written = futures_util::future::poll_fn(|cx| {
-                let buf = &self.write_buf[written_total..];
-                Pin::new(&mut self.upgraded).poll_write(cx, buf)
-            })
-            .await?;
-            if written == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::WriteZero,
-                    "write returned 0 bytes",
-                ));
-            }
-            written_total += written;
-        }
-        self.write_buf.clear();
-        if self.write_buf.capacity() > DEFAULT_BUF_SIZE * 4 {
-            self.write_buf.shrink_to(DEFAULT_BUF_SIZE);
-        }
-
-        // Also flush the underlying stream
-        futures_util::future::poll_fn(|cx| Pin::new(&mut self.upgraded).poll_flush(cx)).await?;
-
-        Ok(written_total)
-    }
-}
-
-impl io::Read for UpgradedIo {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let available = self.available_read();
-        if available.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "need to fill read buffer",
-            ));
-        }
-        let to_read = available.len().min(buf.len());
-        buf[..to_read].copy_from_slice(&available[..to_read]);
-        self.consume_read(to_read);
-        Ok(to_read)
-    }
-}
-
-impl io::Write for UpgradedIo {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if self.write_buf.len() + buf.len() > MAX_BUF_SIZE {
-            let space = MAX_BUF_SIZE - self.write_buf.len();
-            if space == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::WouldBlock,
-                    "write buffer full, need to flush",
-                ));
-            }
-            self.write_buf.extend_from_slice(&buf[..space]);
-            return Ok(space);
-        }
-        self.write_buf.extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        // Intentionally no-op for tungstenite compatibility.
-        // Actual flushing happens via flush_write_buf().
-        Ok(())
-    }
-}
 
 // ===== Message types =====
 
@@ -479,15 +325,14 @@ impl From<Message> for Vec<u8> {
 /// A WebSocket stream.
 ///
 /// Use [`recv`](Self::recv) and [`send`](Self::send) to communicate.
-#[derive(Debug)]
 pub struct WebSocket {
-    inner: ts::WebSocket<UpgradedIo>,
+    inner: compio_ws::WebSocketStream<CompioStream<hyper::upgrade::Upgraded>>,
     protocol: Option<HeaderValue>,
 }
 
-impl std::fmt::Debug for UpgradedIo {
+impl std::fmt::Debug for WebSocket {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UpgradedIo").finish_non_exhaustive()
+        f.debug_struct("WebSocket").finish_non_exhaustive()
     }
 }
 
@@ -497,48 +342,25 @@ impl WebSocket {
     /// Returns `None` if the stream has closed.
     pub async fn recv(&mut self) -> Option<Result<Message, axum_core::Error>> {
         loop {
-            match self.inner.read() {
+            match self.inner.read().await {
                 Ok(msg) => {
-                    // Flush any buffered writes (e.g. automatic pong replies)
-                    let _ = self.flush().await;
                     if let Some(msg) = Message::from_tungstenite(msg) {
                         return Some(Ok(msg));
                     }
                 }
-                Err(ts::Error::Io(ref e)) if e.kind() == io::ErrorKind::WouldBlock => {
-                    // Need more data
-                    match self.inner.get_mut().fill_read_buf().await {
-                        Ok(0) => return None, // EOF
-                        Ok(_) => continue,
-                        Err(e) => return Some(Err(axum_core::Error::new(e))),
-                    }
-                }
                 Err(ts::Error::ConnectionClosed) => return None,
                 Err(ts::Error::AlreadyClosed) => return None,
-                Err(e) => {
-                    let _ = self.flush().await;
-                    return Some(Err(axum_core::Error::new(e)));
-                }
+                Err(e) => return Some(Err(axum_core::Error::new(e))),
             }
         }
     }
 
     /// Send a message.
     pub async fn send(&mut self, msg: Message) -> Result<(), axum_core::Error> {
-        loop {
-            match self.inner.send(msg.clone().into_tungstenite()) {
-                Ok(()) => break,
-                Err(ts::Error::Io(ref e)) if e.kind() == io::ErrorKind::WouldBlock => {
-                    self.inner
-                        .get_mut()
-                        .flush_write_buf()
-                        .await
-                        .map_err(axum_core::Error::new)?;
-                }
-                Err(e) => return Err(axum_core::Error::new(e)),
-            }
-        }
-        self.flush().await
+        self.inner
+            .send(msg.into_tungstenite())
+            .await
+            .map_err(axum_core::Error::new)
     }
 
     /// Close the WebSocket connection.
@@ -547,49 +369,15 @@ impl WebSocket {
             code: ts::protocol::frame::coding::CloseCode::from(f.code),
             reason: f.reason.into_tungstenite(),
         });
-        loop {
-            match self.inner.close(ts_frame.clone()) {
-                Ok(()) => break,
-                Err(ts::Error::Io(ref e)) if e.kind() == io::ErrorKind::WouldBlock => {
-                    let io = self.inner.get_mut();
-                    let flushed = io.flush_write_buf().await.map_err(axum_core::Error::new)?;
-                    if flushed == 0 {
-                        io.fill_read_buf().await.map_err(axum_core::Error::new)?;
-                    }
-                }
-                Err(ts::Error::ConnectionClosed) => break,
-                Err(e) => return Err(axum_core::Error::new(e)),
-            }
-        }
-        self.flush().await
+        self.inner
+            .close(ts_frame)
+            .await
+            .map_err(axum_core::Error::new)
     }
 
     /// Return the selected WebSocket subprotocol, if one has been chosen.
     pub fn protocol(&self) -> Option<&HeaderValue> {
         self.protocol.as_ref()
-    }
-
-    async fn flush(&mut self) -> Result<(), axum_core::Error> {
-        loop {
-            match self.inner.flush() {
-                Ok(()) => break,
-                Err(ts::Error::Io(ref e)) if e.kind() == io::ErrorKind::WouldBlock => {
-                    self.inner
-                        .get_mut()
-                        .flush_write_buf()
-                        .await
-                        .map_err(axum_core::Error::new)?;
-                }
-                Err(ts::Error::ConnectionClosed) => break,
-                Err(e) => return Err(axum_core::Error::new(e)),
-            }
-        }
-        self.inner
-            .get_mut()
-            .flush_write_buf()
-            .await
-            .map_err(axum_core::Error::new)?;
-        Ok(())
     }
 }
 
@@ -776,8 +564,13 @@ impl<F> WebSocketUpgrade<F> {
                 }
             };
 
-            let io = UpgradedIo::new(upgraded);
-            let ws = ts::WebSocket::from_raw_socket(io, ts::protocol::Role::Server, Some(config));
+            let stream = CompioStream::new(upgraded);
+            let ws = compio_ws::WebSocketStream::from_raw_socket(
+                stream,
+                ts::protocol::Role::Server,
+                config,
+            )
+            .await;
             let socket = WebSocket {
                 inner: ws,
                 protocol,
