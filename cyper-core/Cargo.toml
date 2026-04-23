@@ -14,7 +14,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-compio = { workspace = true, features = ["io-compat", "time"] }
+compio = { workspace = true, features = ["io", "time", "tls"] }
 
 futures-util = { workspace = true }
 hyper = { workspace = true }
