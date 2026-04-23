@@ -5,7 +5,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio::{net::TcpStream, tls::MaybeTlsStream};
+use compio::net::TcpStream;
 use cyper_core::HyperStream;
 use futures_util::StreamExt;
 use hyper::Uri;
@@ -15,7 +15,7 @@ use crate::{Error, Result, TlsBackend, resolve::ArcResolver};
 
 /// A HTTP stream wrapper, based on compio, and exposes [`hyper::rt`]
 /// interfaces.
-pub struct HttpStream(HyperStream<MaybeTlsStream<TcpStream>>);
+pub struct HttpStream(HyperStream<TcpStream>);
 
 impl HttpStream {
     /// Create [`HttpStream`] with target uri and TLS backend.
@@ -34,18 +34,18 @@ impl HttpStream {
                 let stream = Self::connect_tcp(&uri, host, port, resolver).await?;
                 // Ignore it.
                 let _tls = tls;
-                MaybeTlsStream::new_plain(stream)
+                HyperStream::new_plain(stream)
             }
             #[cfg(any(feature = "native-tls", feature = "rustls"))]
             "https" => {
                 let port = port.unwrap_or(443);
                 let stream = Self::connect_tcp(&uri, host, port, resolver).await?;
                 let connector = tls.create_connector()?;
-                MaybeTlsStream::new_tls(connector.connect(host, stream).await?)
+                HyperStream::new_tls(connector.connect(host, stream).await?)
             }
             _ => return Err(Error::BadScheme(scheme.to_string())),
         };
-        Ok(Self(HyperStream::new(stream)))
+        Ok(Self(stream))
     }
 
     async fn connect_tcp(
@@ -79,8 +79,7 @@ impl hyper::rt::Read for HttpStream {
         cx: &mut Context<'_>,
         buf: hyper::rt::ReadBufCursor<'_>,
     ) -> Poll<io::Result<()>> {
-        let inner = std::pin::pin!(&mut self.0);
-        inner.poll_read(cx, buf)
+        Pin::new(&mut self.0).poll_read(cx, buf)
     }
 }
 
@@ -90,18 +89,27 @@ impl hyper::rt::Write for HttpStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let inner = std::pin::pin!(&mut self.0);
-        inner.poll_write(cx, buf)
+        Pin::new(&mut self.0).poll_write(cx, buf)
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.0).poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.0.is_write_vectored()
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let inner = std::pin::pin!(&mut self.0);
-        inner.poll_flush(cx)
+        Pin::new(&mut self.0).poll_flush(cx)
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let inner = std::pin::pin!(&mut self.0);
-        inner.poll_shutdown(cx)
+        Pin::new(&mut self.0).poll_shutdown(cx)
     }
 }
 
@@ -110,7 +118,6 @@ impl Connection for HttpStream {
         let conn = Connected::new();
         let is_h2 = self
             .0
-            .get_ref()
             .negotiated_alpn()
             .map(|alpn| *alpn == *b"h2")
             .unwrap_or_default();

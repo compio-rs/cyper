@@ -157,7 +157,7 @@ async fn test_rustls() {
 async fn test_http3() {
     let resp = Client::builder()
         .build()
-        .get("https://http3check.net")
+        .get("https://compio.rs")
         .unwrap()
         .version(http::Version::HTTP_3)
         .send()

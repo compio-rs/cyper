@@ -34,9 +34,12 @@
 
 use std::{borrow::Cow, collections::BTreeSet, future::Future};
 
+use async_tungstenite::{
+    WebSocketStream,
+    tungstenite::{self as ts, protocol::WebSocketConfig},
+};
 use axum_core::{body::Body, extract::FromRequestParts, response::Response};
-use compio::ws::tungstenite::{self as ts, protocol::WebSocketConfig};
-use cyper_core::CompioStream;
+use futures_util::StreamExt;
 use hyper::{
     Method, StatusCode, Version,
     header::{self, HeaderMap, HeaderName, HeaderValue},
@@ -48,7 +51,7 @@ use sha1::{Digest, Sha1};
 pub use ts::protocol::frame::coding::CloseCode;
 pub use ts::{Bytes, Message, Utf8Bytes, protocol::CloseFrame};
 
-use self::rejection::*;
+use self::{compat::FuturesIo, rejection::*};
 
 // ===== WebSocket =====
 
@@ -56,7 +59,7 @@ use self::rejection::*;
 ///
 /// Use [`recv`](Self::recv) and [`send`](Self::send) to communicate.
 pub struct WebSocket {
-    inner: compio::ws::WebSocketStream<CompioStream<hyper::upgrade::Upgraded>>,
+    inner: WebSocketStream<FuturesIo<hyper::upgrade::Upgraded>>,
     protocol: Option<HeaderValue>,
 }
 
@@ -71,20 +74,10 @@ impl WebSocket {
     ///
     /// Returns `None` if the stream has closed.
     pub async fn recv(&mut self) -> Option<Result<Message, axum_core::Error>> {
-        loop {
-            match self.inner.read().await {
-                Ok(msg) => {
-                    // Ignore `Frame` frames as recommended by the tungstenite maintainers
-                    // https://github.com/snapview/tungstenite-rs/issues/268
-                    if !matches!(msg, Message::Frame(_)) {
-                        return Some(Ok(msg));
-                    }
-                }
-                Err(ts::Error::ConnectionClosed) => return None,
-                Err(ts::Error::AlreadyClosed) => return None,
-                Err(e) => return Some(Err(axum_core::Error::new(e))),
-            }
-        }
+        self.inner
+            .next()
+            .await
+            .map(|res| res.map_err(axum_core::Error::new))
     }
 
     /// Send a message.
@@ -297,11 +290,11 @@ impl<F> WebSocketUpgrade<F> {
                 }
             };
 
-            let stream = CompioStream::new(upgraded);
-            let ws = compio::ws::WebSocketStream::from_raw_socket(
-                stream,
+            let upgraded = FuturesIo::new(upgraded);
+            let ws = WebSocketStream::from_raw_socket(
+                upgraded,
                 ts::protocol::Role::Server,
-                config,
+                Some(config),
             )
             .await;
             let socket = WebSocket {
@@ -451,6 +444,66 @@ fn sign(key: &[u8]) -> HeaderValue {
     sha1.update(&b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"[..]);
     let b64 = ts::Bytes::from(base64::engine::general_purpose::STANDARD.encode(sha1.finalize()));
     HeaderValue::from_maybe_shared(b64).expect("base64 is a valid value")
+}
+
+mod compat {
+    use std::{
+        io,
+        pin::Pin,
+        task::{Context, Poll, ready},
+    };
+
+    pub struct FuturesIo<T>(T);
+
+    impl<T> FuturesIo<T> {
+        pub fn new(inner: T) -> Self {
+            Self(inner)
+        }
+    }
+
+    impl<T: hyper::rt::Read + Unpin> futures_util::AsyncRead for FuturesIo<T> {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<io::Result<usize>> {
+            let mut read_buf = hyper::rt::ReadBuf::uninit(unsafe {
+                std::slice::from_raw_parts_mut(buf.as_mut_ptr().cast(), buf.len())
+            });
+            ready!(hyper::rt::Read::poll_read(
+                Pin::new(&mut self.0),
+                cx,
+                read_buf.unfilled()
+            ))?;
+            Poll::Ready(Ok(read_buf.filled().len()))
+        }
+    }
+
+    impl<T: hyper::rt::Write + Unpin> futures_util::AsyncWrite for FuturesIo<T> {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            hyper::rt::Write::poll_write(Pin::new(&mut self.0), cx, buf)
+        }
+
+        fn poll_write_vectored(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            bufs: &[io::IoSlice<'_>],
+        ) -> Poll<io::Result<usize>> {
+            hyper::rt::Write::poll_write_vectored(Pin::new(&mut self.0), cx, bufs)
+        }
+
+        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            hyper::rt::Write::poll_flush(Pin::new(&mut self.0), cx)
+        }
+
+        fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            hyper::rt::Write::poll_shutdown(Pin::new(&mut self.0), cx)
+        }
+    }
 }
 
 // ===== Rejection types =====

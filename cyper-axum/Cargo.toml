@@ -1,6 +1,6 @@
 [package]
 name = "cyper-axum"
-version = "0.8.0"
+version = "0.9.0-rc.1"
 description = "axum adaptor based on cyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net"]
@@ -15,6 +15,7 @@ compio-log = "0.1.0"
 cyper-core = { workspace = true }
 socket2 = { workspace = true }
 
+async-tungstenite = { version = "0.34.0", optional = true }
 axum-core = { workspace = true }
 axum = { workspace = true, default-features = false, features = ["http1"] }
 futures-util = { workspace = true }
@@ -26,7 +27,7 @@ tower-service = { workspace = true }
 
 tokio = { version = "1", features = ["sync"] }
 
-sha1 = { version = "0.10", optional = true }
+sha1 = { version = "0.11", optional = true }
 base64 = { version = "0.22", optional = true }
 
 
@@ -34,12 +35,16 @@ base64 = { version = "0.22", optional = true }
 default = []
 enable_log = ["compio-log/enable_log"]
 http2 = ["axum/http2"]
-ws = ["compio/ws", "dep:sha1", "dep:base64"]
+ws = ["dep:async-tungstenite", "dep:sha1", "dep:base64"]
+all = ["http2", "ws"]
 
 nightly = ["cyper-core/nightly"]
 
 [dev-dependencies]
-compio = { workspace = true, default-features = true, features = ["macros", "ws"] }
+compio = { workspace = true, default-features = true, features = [
+    "macros",
+    "ws",
+] }
 futures-channel = { workspace = true }
 
 [[test]]
