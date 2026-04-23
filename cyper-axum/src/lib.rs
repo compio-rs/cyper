@@ -24,7 +24,7 @@ use std::{
 use axum::{Router, handler::HandlerService, routing::MethodRouter};
 use axum_core::{body::Body, extract::Request, response::Response};
 use compio::{
-    io::{AsyncRead, AsyncWrite},
+    io::{AsyncRead, AsyncWrite, util::Splittable},
     net::{TcpListener, TcpStream, UnixListener, UnixStream},
 };
 use compio_log::*;
@@ -41,7 +41,7 @@ use tower_service::Service;
 /// Types that can listen for connections.
 pub trait Listener: 'static {
     /// The listener's IO type.
-    type Io: AsyncRead + AsyncWrite + Unpin + 'static;
+    type Io: Splittable + 'static;
 
     /// The listener's address type.
     type Addr;
@@ -268,6 +268,8 @@ where
     L: Listener,
     M: for<'a> Service<IncomingStream<'a, L>, Error = Infallible, Response = S> + 'static,
     S: Service<Request, Response = Response, Error = Infallible> + Clone + 'static,
+    <<L as Listener>::Io as Splittable>::ReadHalf: AsyncRead + Unpin,
+    <<L as Listener>::Io as Splittable>::WriteHalf: AsyncWrite + Unpin,
 {
     type IntoFuture = ServeFuture;
     type Output = io::Result<()>;
@@ -283,7 +285,7 @@ where
             loop {
                 let (io, remote_addr) = listener.accept().await;
 
-                let io = HyperStream::new(io);
+                let io = HyperStream::new_plain(io);
 
                 poll_fn(|cx| make_service.poll_ready(cx))
                     .await
@@ -307,7 +309,10 @@ where
                     #[cfg(feature = "http2")]
                     builder.http2().enable_connect_protocol();
                     match builder
-                        .serve_connection_with_upgrades(io, ServiceSendWrapper::new(hyper_service))
+                        .serve_connection_with_upgrades(
+                            Box::pin(io),
+                            ServiceSendWrapper::new(hyper_service),
+                        )
                         .await
                     {
                         Ok(()) => {}
@@ -374,6 +379,8 @@ where
     M: for<'a> Service<IncomingStream<'a, L>, Error = Infallible, Response = S> + 'static,
     S: Service<Request, Response = Response, Error = Infallible> + Clone + 'static,
     F: Future<Output = ()> + 'static,
+    <<L as Listener>::Io as Splittable>::ReadHalf: AsyncRead + Unpin,
+    <<L as Listener>::Io as Splittable>::WriteHalf: AsyncWrite + Unpin,
 {
     type IntoFuture = ServeFuture;
     type Output = io::Result<()>;
@@ -409,7 +416,7 @@ where
                     }
                 };
 
-                let io = HyperStream::new(io);
+                let io = HyperStream::new_plain(io);
 
                 trace!("connection {remote_addr:?} accepted");
 
@@ -434,8 +441,10 @@ where
 
                 compio::runtime::spawn(async move {
                     let builder = Builder::new(CompioExecutor);
-                    let conn = builder
-                        .serve_connection_with_upgrades(io, ServiceSendWrapper::new(hyper_service));
+                    let conn = builder.serve_connection_with_upgrades(
+                        Box::pin(io),
+                        ServiceSendWrapper::new(hyper_service),
+                    );
                     pin_mut!(conn);
 
                     let signal_closed = signal_tx.closed().fuse();
@@ -504,10 +513,10 @@ pub struct IncomingStream<'a, L: Listener> {
     remote_addr: L::Addr,
 }
 
-impl<L: Listener> IncomingStream<'_, L> {
+impl<'a, L: Listener> IncomingStream<'a, L> {
     /// Get a reference to the inner IO type.
-    pub fn io(&self) -> &L::Io {
-        self.io.get_ref()
+    pub fn io(&self) -> &'a HyperStream<L::Io> {
+        self.io
     }
 
     /// Returns the remote address that this stream is bound to.
