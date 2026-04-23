@@ -15,6 +15,7 @@ compio-log = "0.1.0"
 cyper-core = { workspace = true }
 socket2 = { workspace = true }
 
+async-tungstenite = { version = "0.34.0", optional = true }
 axum-core = { workspace = true }
 axum = { workspace = true, default-features = false, features = ["http1"] }
 futures-util = { workspace = true }
@@ -34,7 +35,7 @@ base64 = { version = "0.22", optional = true }
 default = []
 enable_log = ["compio-log/enable_log"]
 http2 = ["axum/http2"]
-ws = ["compio/ws", "dep:sha1", "dep:base64"]
+ws = ["dep:async-tungstenite", "dep:sha1", "dep:base64"]
 all = ["http2", "ws"]
 
 nightly = ["cyper-core/nightly"]
