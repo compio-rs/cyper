@@ -514,7 +514,7 @@ pub struct IncomingStream<'a, L: Listener> {
 }
 
 impl<'a, L: Listener> IncomingStream<'a, L> {
-    /// Get a reference to the inner IO type.
+    /// Get a reference to the underlying [`HyperStream`].
     pub fn io(&self) -> &'a HyperStream<L::Io> {
         self.io
     }
