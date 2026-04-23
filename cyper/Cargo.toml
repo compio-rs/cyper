@@ -14,10 +14,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-compio = { workspace = true, features = ["net", "fs", "time", "bytes", "tls"] }
-compio-quic = { workspace = true, optional = true, features = [
-    "platform-verifier",
-] }
+compio = { workspace = true, features = ["net", "fs", "bytes", "tls"] }
 cyper-core = { workspace = true }
 
 http = "1.0.0"
@@ -67,15 +64,16 @@ tower = { workspace = true }
 [features]
 default = ["native-tls"]
 native-tls = ["compio/native-tls"]
-rustls = ["compio/rustls", "dep:rustls-platform-verifier"]
+rustls = ["compio/rustls-platform-verifier", "dep:rustls-platform-verifier"]
 cookies = ["dep:cookie_store"]
 json = ["dep:serde_json"]
 http2 = ["hyper-util/http2"]
 http3 = [
-    "dep:compio-quic",
     "dep:h3",
     "dep:once_cell",
     "dep:socket2",
+    "compio/quic",
+    "compio/ring",
     "compio/h3",
     "rustls",
 ]
@@ -94,7 +92,7 @@ all = [
     "multipart",
 ]
 
-nyquest = ["dep:nyquest-interface", "compio/sync"]
+nyquest = ["dep:nyquest-interface", "compio/sync", "compio/time"]
 nyquest-async = [
     "nyquest",
     "stream",
