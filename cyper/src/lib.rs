@@ -2,6 +2,10 @@
 
 #![warn(missing_docs)]
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
+#![cfg_attr(
+    feature = "impl_trait_in_assoc_type",
+    feature(impl_trait_in_assoc_type)
+)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod body;

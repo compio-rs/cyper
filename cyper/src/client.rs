@@ -315,3 +315,28 @@ impl ClientBuilder {
         self
     }
 }
+
+#[cfg(feature = "impl_trait_in_assoc_type")]
+impl hyper::service::Service<Request> for Client {
+    type Error = crate::Error;
+    type Response = Response;
+
+    type Future = impl Future<Output = Result<Response>>;
+
+    fn call(&self, req: Request) -> Self::Future {
+        let client = self.clone();
+        async move { client.execute(req).await }
+    }
+}
+
+#[cfg(not(feature = "impl_trait_in_assoc_type"))]
+impl hyper::service::Service<Request> for Client {
+    type Error = crate::Error;
+    type Future = std::pin::Pin<Box<dyn Future<Output = Result<Response>>>>;
+    type Response = Response;
+
+    fn call(&self, req: Request) -> Self::Future {
+        let client = self.clone();
+        Box::pin(async move { client.execute(req).await })
+    }
+}
