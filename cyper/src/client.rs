@@ -1,14 +1,13 @@
-use std::{
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::sync::Arc;
+#[cfg(feature = "stream")]
+use std::task::{Context, Poll};
 
 use cyper_core::{CompioExecutor, CompioTimer};
-use http::header::Entry;
+use http::{HeaderValue, header::Entry};
 use hyper::{HeaderMap, Method, Uri};
 use url::Url;
 #[cfg(feature = "cookies")]
-use {compio::bytes::Bytes, cookie_store::CookieStore, http::HeaderValue, std::sync::RwLock};
+use {compio::bytes::Bytes, cookie_store::CookieStore, std::sync::RwLock};
 
 use crate::{
     Body, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend,
@@ -41,8 +40,38 @@ impl Client {
 
     /// Send a request and wait for a response.
     pub async fn execute(&self, request: Request) -> Result<Response> {
-        let (method, url, mut headers, body, version) = request.pieces();
+        let (method, url, headers, body, version) = request.pieces();
 
+        let request = hyper::Request::builder()
+            .method(method)
+            .uri(
+                url.as_str()
+                    .parse::<Uri>()
+                    .expect("a parsed Url should always be a valid Uri"),
+            )
+            .version(version)
+            .body(body)?;
+        self.execute_impl(request, headers, url).await
+    }
+
+    #[cfg(feature = "stream")]
+    async fn execute_tower(&self, request: http::Request<Body>) -> Result<http::Response<Body>> {
+        let url = request.uri().to_string().parse::<Url>()?;
+        let resp = self.execute_impl(request, HeaderMap::new(), url).await?;
+        let http_resp = resp.res;
+        let body = resp.body;
+        Ok(http::Response::from_parts(
+            http_resp.into_parts().0,
+            body.into(),
+        ))
+    }
+
+    async fn execute_impl(
+        &self,
+        mut request: http::Request<Body>,
+        mut headers: HeaderMap<HeaderValue>,
+        url: Url,
+    ) -> Result<Response> {
         for (key, value) in &self.client.headers {
             if let Entry::Vacant(entry) = headers.entry(key) {
                 entry.insert(value.clone());
@@ -58,15 +87,6 @@ impl Client {
             }
         }
 
-        let mut request = hyper::Request::builder()
-            .method(method)
-            .uri(
-                url.as_str()
-                    .parse::<Uri>()
-                    .expect("a parsed Url should always be a valid Uri"),
-            )
-            .version(version)
-            .body(body)?;
         *request.headers_mut() = headers;
 
         #[cfg(feature = "http3")]
@@ -332,20 +352,20 @@ impl hyper::service::Service<Request> for Client {
     }
 }
 
-#[cfg(feature = "impl_trait_in_assoc_type")]
-impl tower_service::Service<Request> for Client {
+#[cfg(all(feature = "impl_trait_in_assoc_type", feature = "stream"))]
+impl tower_service::Service<http::Request<Body>> for Client {
     type Error = crate::Error;
-    type Response = Response;
+    type Response = http::Response<Body>;
 
-    type Future = impl Future<Output = Result<Response>>;
+    type Future = impl Future<Output = Result<http::Response<Body>>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<()>> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: Request) -> Self::Future {
+    fn call(&mut self, req: http::Request<Body>) -> Self::Future {
         let client = self.clone();
-        async move { client.execute(req).await }
+        async move { client.execute_tower(req).await }
     }
 }
 
@@ -361,18 +381,18 @@ impl hyper::service::Service<Request> for Client {
     }
 }
 
-#[cfg(not(feature = "impl_trait_in_assoc_type"))]
-impl tower_service::Service<Request> for Client {
+#[cfg(all(not(feature = "impl_trait_in_assoc_type"), feature = "stream"))]
+impl tower_service::Service<http::Request<Body>> for Client {
     type Error = crate::Error;
-    type Future = std::pin::Pin<Box<dyn Future<Output = Result<Response>>>>;
-    type Response = Response;
+    type Future = std::pin::Pin<Box<dyn Future<Output = Result<http::Response<Body>>>>>;
+    type Response = http::Response<Body>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<()>> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: Request) -> Self::Future {
+    fn call(&mut self, req: http::Request<Body>) -> Self::Future {
         let client = self.clone();
-        Box::pin(async move { client.execute(req).await })
+        Box::pin(async move { client.execute_tower(req).await })
     }
 }

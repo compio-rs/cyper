@@ -104,7 +104,6 @@ impl Form {
     ///
     /// Errors when the file cannot be opened.
     #[cfg(feature = "stream")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
     pub async fn file<T, U>(self, name: T, path: U) -> io::Result<Form>
     where
         T: Into<Cow<'static, str>>,
@@ -269,7 +268,6 @@ impl Part {
     ///
     /// Errors when the file cannot be opened.
     #[cfg(feature = "stream")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
     pub async fn file<T: AsRef<Path>>(path: T) -> io::Result<Part> {
         let path = path.as_ref();
         let file_name = path
