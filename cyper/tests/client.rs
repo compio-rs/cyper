@@ -3,9 +3,11 @@ mod server;
 #[cfg(feature = "json")]
 use std::collections::HashMap;
 
-use cyper::Client;
+use cyper::{Client, Request};
+use http::Method;
 #[cfg(feature = "json")]
 use http::header::CONTENT_TYPE;
+use hyper::service::Service;
 
 #[compio::test]
 async fn response_text() {
@@ -114,6 +116,23 @@ async fn response_json() {
         .await
         .expect("Failed to get");
     let text = res.json::<String>().await.expect("Failed to get json");
+    assert_eq!("Hello", text);
+}
+
+#[compio::test]
+async fn service() {
+    let server = server::http(move |_req| async { "Hello" }).await;
+
+    let client = Client::new();
+
+    let request = Request::new(
+        Method::GET,
+        format!("http://{}/text", server.addr()).parse().unwrap(),
+    );
+
+    let res = client.call(request).await.expect("Failed to get");
+    assert_eq!(res.content_length(), Some(5));
+    let text = res.text().await.expect("Failed to get text");
     assert_eq!("Hello", text);
 }
 

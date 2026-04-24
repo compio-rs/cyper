@@ -243,3 +243,14 @@ impl Stream for ResponseBody {
         }
     }
 }
+
+#[cfg(feature = "stream")]
+impl From<ResponseBody> for Body {
+    fn from(value: ResponseBody) -> Self {
+        match value {
+            ResponseBody::Incoming(_) => Self(BodyInner::Stream(Box::pin(value))),
+            #[cfg(feature = "http3")]
+            ResponseBody::Blob(b) => Self(BodyInner::Bytes(b)),
+        }
+    }
+}
