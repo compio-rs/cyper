@@ -253,7 +253,6 @@ pub(crate) fn remove_sensitive_headers(headers: &mut HeaderMap, next: &Url, prev
     }
 }
 
-#[allow(dead_code)]
 pub(crate) fn make_referer(next: &Url, previous: &Url) -> Option<HeaderValue> {
     if next.scheme() == "http" && previous.scheme() == "https" {
         return None;

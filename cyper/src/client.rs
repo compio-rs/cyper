@@ -4,7 +4,7 @@ use std::task::{Context, Poll};
 
 use cyper_core::{CompioExecutor, CompioTimer};
 use http::{HeaderValue, header::Entry};
-use hyper::{HeaderMap, Method, StatusCode, Uri};
+use hyper::{HeaderMap, Method, StatusCode, Uri, header::REFERER};
 use url::Url;
 #[cfg(feature = "cookies")]
 use {compio::bytes::Bytes, cookie_store::CookieStore, std::sync::RwLock};
@@ -113,56 +113,16 @@ impl Client {
         let mut body_backup = request.body().try_clone();
         let mut redirect_headers = request.headers().clone();
 
-        #[cfg(feature = "http3")]
-        let mut res = {
-            #[cfg(feature = "http3-altsvc")]
-            let host = url.host_str().expect("a parsed Url should have host");
-
-            #[allow(unused_mut)]
-            let mut should_http3 = request.version() == http::Version::HTTP_3;
-
-            #[cfg(feature = "http3-altsvc")]
-            if url.port().is_none() && self.h3_hosts.find(host) {
-                if let Ok(value) = http::HeaderValue::from_bytes(host.as_bytes()) {
-                    request.headers_mut().insert("Alt-Used", value);
-                }
-                should_http3 = true;
-            }
-
-            let res = if should_http3 {
-                self.h3_client.request(request, url.clone()).await?
-            } else {
-                self.send_h1h2_request(request, &url).await?
-            };
-            #[cfg(feature = "http3-altsvc")]
-            if let Some(alt_svc) = res.headers().get(http::header::ALT_SVC)
-                && let Ok(alt_svc) = std::str::from_utf8(alt_svc.as_bytes())
-                && let Ok(services) = crate::altsvc::parse(alt_svc)
-            {
-                match services {
-                    crate::altsvc::AltService::Clear => self.h3_hosts.clear(host),
-                    crate::altsvc::AltService::Services(services) => {
-                        for srv in services {
-                            if self.h3_hosts.try_insert(host, &srv) {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            res
-        };
-        #[cfg(not(feature = "http3"))]
-        let mut res = self.send_h1h2_request(request, &url).await?;
-
-        #[cfg(feature = "cookies")]
-        self.store_response_cookies(&url, &res);
+        let mut res = self.send_request(request, &url).await?;
 
         // Redirect loop
         let mut current_url = url;
         let mut prev_urls: Vec<Url> = Vec::new();
 
         loop {
+            #[cfg(feature = "cookies")]
+            self.store_response_cookies(&current_url, &res);
+
             let status = res.status();
             if !status.is_redirection() {
                 return Ok(res);
@@ -199,6 +159,13 @@ impl Client {
                         &prev_urls,
                     );
 
+                    if self.client.referer
+                        && let Some(previous_url) = prev_urls.last()
+                        && let Some(v) = redirect::make_referer(&next_url, previous_url)
+                    {
+                        redirect_headers.insert(REFERER, v);
+                    }
+
                     match status {
                         StatusCode::MOVED_PERMANENTLY
                         | StatusCode::FOUND
@@ -233,16 +200,60 @@ impl Client {
                     *req.headers_mut() = redirect_headers.clone();
 
                     current_url = next_url;
-                    res = self.send_h1h2_request(req, &current_url).await?;
-
-                    #[cfg(feature = "cookies")]
-                    self.store_response_cookies(&current_url, &res);
+                    res = self.send_request(req, &current_url).await?;
                 }
                 redirect::ActionKind::Stop => return Ok(res),
                 redirect::ActionKind::Error(e) => {
                     return Err(crate::Error::Redirect(e));
                 }
             }
+        }
+    }
+
+    #[allow(unused_mut)]
+    async fn send_request(&self, mut request: http::Request<Body>, url: &Url) -> Result<Response> {
+        #[cfg(feature = "http3")]
+        {
+            #[cfg(feature = "http3-altsvc")]
+            let host = url.host_str().expect("a parsed Url should have host");
+
+            #[allow(unused_mut)]
+            let mut should_http3 = request.version() == http::Version::HTTP_3;
+
+            #[cfg(feature = "http3-altsvc")]
+            if url.port().is_none() && self.h3_hosts.find(host) {
+                if let Ok(value) = http::HeaderValue::from_bytes(host.as_bytes()) {
+                    request.headers_mut().insert("Alt-Used", value);
+                }
+                should_http3 = true;
+            }
+
+            let res = if should_http3 {
+                self.h3_client.request(request, url.clone()).await?
+            } else {
+                self.send_h1h2_request(request, url).await?
+            };
+            #[cfg(feature = "http3-altsvc")]
+            if let Some(alt_svc) = res.headers().get(http::header::ALT_SVC)
+                && let Ok(alt_svc) = std::str::from_utf8(alt_svc.as_bytes())
+                && let Ok(services) = crate::altsvc::parse(alt_svc)
+            {
+                match services {
+                    crate::altsvc::AltService::Clear => self.h3_hosts.clear(host),
+                    crate::altsvc::AltService::Services(services) => {
+                        for srv in services {
+                            if self.h3_hosts.try_insert(host, &srv) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(res)
+        }
+        #[cfg(not(feature = "http3"))]
+        {
+            self.send_h1h2_request(request, url).await
         }
     }
 
@@ -317,6 +328,7 @@ struct ClientInner {
     client: hyper_util::client::legacy::Client<Connector, Body>,
     headers: HeaderMap,
     redirect_policy: redirect::Policy,
+    referer: bool,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
 }
@@ -330,6 +342,7 @@ pub struct ClientBuilder {
     headers: HeaderMap,
     resolver: Option<ArcResolver>,
     redirect_policy: redirect::Policy,
+    referer: bool,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
 }
@@ -348,6 +361,7 @@ impl ClientBuilder {
             tls: TlsBackend::default(),
             resolver: None,
             redirect_policy: redirect::Policy::default(),
+            referer: true,
             #[cfg(feature = "cookies")]
             cookies: None,
         }
@@ -365,6 +379,7 @@ impl ClientBuilder {
             client,
             headers: self.headers,
             redirect_policy: self.redirect_policy,
+            referer: self.referer,
             #[cfg(feature = "cookies")]
             cookies: self.cookies,
         };
@@ -417,6 +432,14 @@ impl ClientBuilder {
     /// Default is `redirect::Policy::default()` which limits to 10 redirects.
     pub fn redirect(mut self, policy: redirect::Policy) -> Self {
         self.redirect_policy = policy;
+        self
+    }
+
+    /// Enable or disable setting a `Referer` header on redirects.
+    ///
+    /// Default is `true`.
+    pub fn referer(mut self, enable: bool) -> Self {
+        self.referer = enable;
         self
     }
 
