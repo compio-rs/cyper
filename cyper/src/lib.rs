@@ -35,6 +35,9 @@ pub(crate) use stream::*;
 /// DNS resolution
 pub mod resolve;
 
+/// Redirect handling
+pub mod redirect;
+
 mod util;
 
 #[cfg(feature = "http3")]
@@ -119,6 +122,9 @@ pub enum Error {
     #[cfg(feature = "http3")]
     #[error("QUIC connection error: {0}")]
     QuicConnection(#[from] compio::quic::ConnectionError),
+    /// Redirect error.
+    #[error("redirect: {0}")]
+    Redirect(Box<dyn std::error::Error + Send + Sync>),
 }
 
 /// The result type used in `cyper`.

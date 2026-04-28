@@ -106,6 +106,16 @@ impl Body {
             BodyInner::Stream(_) => None,
         }
     }
+
+    /// Try to clone this body.
+    ///
+    /// Bytes bodies can be cloned, but stream bodies cannot.
+    pub fn try_clone(&self) -> Option<Self> {
+        match &self.0 {
+            BodyInner::Bytes(b) => Some(Self(BodyInner::Bytes(b.clone()))),
+            BodyInner::Stream(_) => None,
+        }
+    }
 }
 
 impl hyper::body::Body for Body {
