@@ -118,14 +118,13 @@ impl Client {
         // Redirect loop
         let mut current_url = url;
         let mut prev_urls: Vec<Url> = Vec::new();
-        let mut should_stop = false;
 
         loop {
             #[cfg(feature = "cookies")]
             self.store_response_cookies(&current_url, &res);
 
             let status = res.status();
-            if !status.is_redirection() || should_stop {
+            if !status.is_redirection() {
                 return Ok(res);
             }
 
@@ -208,10 +207,8 @@ impl Client {
 
                     res = self.send_request(req, &current_url).await?;
                 }
-                redirect::ActionKind::Stop => should_stop = true,
-                redirect::ActionKind::Error(e) => {
-                    return Err(crate::Error::Redirect(e));
-                }
+                redirect::ActionKind::Stop => return Ok(res),
+                redirect::ActionKind::Error(e) => return Err(crate::Error::Redirect(e)),
             }
         }
     }
