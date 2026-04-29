@@ -216,17 +216,9 @@ impl Client {
 
     #[allow(unused_mut)]
     async fn send_request(&self, mut request: http::Request<Body>, url: &Url) -> Result<Response> {
-        // Inject proxy-authorization header for HTTP forward proxies
-        if let Ok(uri) = url.as_str().parse::<Uri>() {
-            for matcher in self.client.proxies.iter() {
-                if let Some(auth) = matcher.http_non_tunnel_basic_auth(&uri) {
-                    request
-                        .headers_mut()
-                        .insert(http::header::PROXY_AUTHORIZATION, auth.clone());
-                    break;
-                }
-            }
-        }
+        let uri = request.uri().clone();
+        self.proxy_auth(&uri, request.headers_mut());
+        self.proxy_custom_headers(&uri, request.headers_mut());
 
         #[cfg(feature = "http3")]
         {
@@ -300,6 +292,49 @@ impl Client {
         }
     }
 
+    fn proxy_auth(&self, dst: &Uri, headers: &mut HeaderMap) {
+        if !self.client.proxies_maybe_http_auth {
+            return;
+        }
+
+        // Only set the header here if the destination scheme is 'http',
+        // since otherwise, the header will be included in the CONNECT tunnel
+        // request instead.
+        if dst.scheme() != Some(&http::uri::Scheme::HTTP) {
+            return;
+        }
+
+        if headers.contains_key(http::header::PROXY_AUTHORIZATION) {
+            return;
+        }
+
+        for proxy in self.client.proxies.iter() {
+            if let Some(header) = proxy.http_non_tunnel_basic_auth(dst) {
+                headers.insert(http::header::PROXY_AUTHORIZATION, header);
+                break;
+            }
+        }
+    }
+
+    fn proxy_custom_headers(&self, dst: &Uri, headers: &mut HeaderMap) {
+        if !self.client.proxies_maybe_http_custom_headers {
+            return;
+        }
+
+        if dst.scheme() != Some(&http::uri::Scheme::HTTP) {
+            return;
+        }
+
+        for proxy in self.client.proxies.iter() {
+            if let Some(iter) = proxy.http_non_tunnel_custom_headers(dst) {
+                iter.iter().for_each(|(key, value)| {
+                    headers.insert(key, value.clone());
+                });
+                break;
+            }
+        }
+    }
+
     /// Send a request with method and url.
     pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> Result<RequestBuilder> {
         Ok(RequestBuilder::new(
@@ -346,6 +381,8 @@ struct ClientInner {
     redirect_policy: redirect::Policy,
     referer: bool,
     proxies: Arc<Vec<proxy::Matcher>>,
+    proxies_maybe_http_auth: bool,
+    proxies_maybe_http_custom_headers: bool,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
 }
@@ -393,19 +430,23 @@ impl ClientBuilder {
         #[allow(unused)]
         let accept_invalid_certs = self.tls.accept_invalid_certs();
         let no_proxy = self.no_proxy;
-        let proxies: Arc<Vec<proxy::Matcher>> = Arc::new(
-            self.proxies
-                .into_iter()
-                .map(|p| {
-                    if let Some(ref np) = no_proxy {
-                        p.no_proxy(Some(np.clone()))
-                    } else {
-                        p
-                    }
-                    .into_matcher()
-                })
-                .collect(),
-        );
+        let proxies = if !self.proxies.is_empty() {
+            Arc::new(
+                self.proxies
+                    .into_iter()
+                    .map(|p| {
+                        if let Some(ref np) = no_proxy {
+                            p.no_proxy(Some(np.clone()))
+                        } else {
+                            p
+                        }
+                        .into_matcher()
+                    })
+                    .collect(),
+            )
+        } else {
+            Arc::new(vec![proxy::Matcher::system()])
+        };
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
             .timer(CompioTimer)
@@ -414,12 +455,18 @@ impl ClientBuilder {
                 self.resolver.clone(),
                 proxies.clone(),
             ));
+
+        let proxies_maybe_http_auth = proxies.iter().any(|p| p.maybe_has_http_auth());
+        let proxies_maybe_http_custom_headers =
+            proxies.iter().any(|p| p.maybe_has_http_custom_headers());
         let client_ref = ClientInner {
             client,
             headers: self.headers,
             redirect_policy: self.redirect_policy,
             referer: self.referer,
             proxies,
+            proxies_maybe_http_auth,
+            proxies_maybe_http_custom_headers,
             #[cfg(feature = "cookies")]
             cookies: self.cookies,
         };

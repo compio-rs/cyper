@@ -5,10 +5,14 @@ use std::{
     task::{Context, Poll},
 };
 
-use compio::{BufResult, net::TcpStream};
+use compio::{
+    BufResult,
+    buf::{IoBuf, IoBufMut, IoVectoredBuf},
+    io::{AsyncRead, AsyncWrite, util::Splittable},
+    net::TcpStream,
+};
 use cyper_core::HyperStream;
 use futures_util::StreamExt;
-use http::HeaderValue;
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
 
@@ -16,118 +20,18 @@ use crate::{Error, Result, TlsBackend, resolve::ArcResolver};
 
 /// A HTTP stream wrapper, based on compio, and exposes [`hyper::rt`]
 /// interfaces.
-pub struct HttpStream {
-    inner: HyperStream<TcpStream>,
+pub struct HttpStream<S = TcpStream>
+where
+    S: Splittable,
+{
+    inner: HyperStream<S>,
     is_proxy: bool,
+    is_h2: bool,
 }
 
 impl HttpStream {
     /// Create [`HttpStream`] with target uri and TLS backend.
-    pub async fn connect(uri: Uri, tls: TlsBackend, resolver: Option<ArcResolver>) -> Result<Self> {
-        Self::connect_inner(uri, tls, resolver, false).await
-    }
-
-    /// Create [`HttpStream`] as an HTTP forward proxy connection.
-    ///
-    /// The returned stream will report `is_proxy = true`, telling hyper to
-    /// use absolute-form URIs in the request line.
-    pub async fn connect_proxy(
-        proxy_uri: Uri,
-        tls: TlsBackend,
-        resolver: Option<ArcResolver>,
-    ) -> Result<Self> {
-        Self::connect_inner(proxy_uri, tls, resolver, true).await
-    }
-
-    /// Connect to the target through an HTTP CONNECT tunnel.
-    ///
-    /// This is used when HTTPS traffic needs to go through an HTTP proxy.
-    /// Connects to the proxy, sends CONNECT, and TLS-wraps the tunneled
-    /// connection.
-    #[cfg(any(feature = "native-tls", feature = "rustls"))]
-    pub async fn connect_tunneled(
-        proxy_uri: Uri,
-        target_uri: &Uri,
-        auth: Option<&HeaderValue>,
-        tls: TlsBackend,
-        resolver: Option<ArcResolver>,
-    ) -> Result<Self> {
-        let proxy_host = proxy_uri.host().expect("proxy URI should have host");
-        let proxy_port = proxy_uri.port_u16().unwrap_or(8080);
-
-        let target_host = target_uri
-            .host()
-            .expect("target URI should have host")
-            .strip_prefix('[')
-            .and_then(|h| h.strip_suffix(']'))
-            .unwrap_or(target_uri.host().unwrap());
-        let target_port =
-            target_uri
-                .port_u16()
-                .unwrap_or(if target_uri.scheme_str() == Some("https") {
-                    443
-                } else {
-                    80
-                });
-
-        let stream = Self::connect_tcp(&proxy_uri, proxy_host, proxy_port, resolver).await?;
-        let stream = Self::do_connect_handshake(stream, target_host, target_port, auth).await?;
-
-        let connector = tls.create_connector()?;
-        let tls_stream = connector.connect(target_host, stream).await?;
-
-        Ok(Self {
-            inner: HyperStream::new_tls(tls_stream),
-            is_proxy: false,
-        })
-    }
-
-    #[cfg(any(feature = "native-tls", feature = "rustls"))]
-    async fn do_connect_handshake(
-        stream: TcpStream,
-        host: &str,
-        port: u16,
-        auth: Option<&HeaderValue>,
-    ) -> Result<TcpStream> {
-        use compio::io::{AsyncReadExt, AsyncWriteExt};
-
-        let auth_line = auth
-            .and_then(|v| v.to_str().ok())
-            .map(|v| format!("Proxy-Authorization: {v}\r\n"))
-            .unwrap_or_default();
-
-        let request =
-            format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n{auth_line}\r\n");
-
-        let mut stream = stream;
-        let BufResult(res, _) = stream.write_all(request).await;
-        res?;
-
-        let mut buf = Vec::<u8>::with_capacity(4096);
-        loop {
-            let BufResult(res, b) = stream.append(buf).await;
-            let n = res?;
-            buf = b;
-            if buf.len() >= 4 && buf[buf.len() - 4..] == *b"\r\n\r\n" {
-                break;
-            }
-            if n == 0 {
-                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "unexpected eof").into());
-            }
-        }
-
-        let resp =
-            std::str::from_utf8(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        let status_line = resp.lines().next().unwrap_or("");
-        if !status_line.starts_with("HTTP/1.1 200") && !status_line.starts_with("HTTP/1.0 200") {
-            return Err(io::Error::other(format!("proxy CONNECT failed: {status_line}")).into());
-        }
-
-        Ok(stream)
-    }
-
-    async fn connect_inner(
+    pub async fn connect(
         uri: Uri,
         tls: TlsBackend,
         resolver: Option<ArcResolver>,
@@ -158,9 +62,14 @@ impl HttpStream {
             }
             _ => return Err(Error::BadScheme(scheme.to_string())),
         };
+        let is_h2 = stream
+            .negotiated_alpn()
+            .map(|alpn| *alpn == *b"h2")
+            .unwrap_or_default();
         Ok(Self {
             inner: stream,
             is_proxy,
+            is_h2,
         })
     }
 
@@ -189,7 +98,56 @@ impl HttpStream {
     }
 }
 
-impl hyper::rt::Read for HttpStream {
+impl<S: Splittable + 'static> HttpStream<S>
+where
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
+{
+    pub async fn connect_with(stream: S, uri: Uri, tls: TlsBackend) -> Result<Self> {
+        let scheme = uri.scheme_str().unwrap_or("http");
+        let stream = match scheme {
+            "http" => {
+                let _tls = tls;
+                HyperStream::new_plain(stream)
+            }
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            "https" => {
+                let host = uri.host().expect("there should be host");
+                // `Uri::host()` includes brackets for IPv6, we must strip them.
+                let host = host
+                    .strip_prefix('[')
+                    .and_then(|h| h.strip_suffix(']'))
+                    .unwrap_or(host);
+                let connector = tls.create_connector()?;
+                HyperStream::new_tls(connector.connect(host, stream).await?)
+            }
+            _ => return Err(Error::BadScheme(scheme.to_string())),
+        };
+        let is_h2 = stream
+            .negotiated_alpn()
+            .map(|alpn| *alpn == *b"h2")
+            .unwrap_or_default();
+        Ok(Self {
+            inner: stream,
+            is_proxy: false,
+            is_h2,
+        })
+    }
+
+    pub fn into_wrapped(self) -> HttpStream<Self> {
+        HttpStream {
+            is_proxy: self.is_proxy,
+            is_h2: self.is_h2,
+            inner: HyperStream::new_plain(self),
+        }
+    }
+}
+
+impl<S: Splittable + 'static> hyper::rt::Read for HttpStream<S>
+where
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
+{
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -199,7 +157,11 @@ impl hyper::rt::Read for HttpStream {
     }
 }
 
-impl hyper::rt::Write for HttpStream {
+impl<S: Splittable + 'static> hyper::rt::Write for HttpStream<S>
+where
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
+{
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -229,14 +191,75 @@ impl hyper::rt::Write for HttpStream {
     }
 }
 
-impl Connection for HttpStream {
+impl<S: Splittable + 'static> Connection for HttpStream<S>
+where
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
+{
     fn connected(&self) -> Connected {
         let conn = Connected::new().proxy(self.is_proxy);
-        let is_h2 = self
-            .inner
-            .negotiated_alpn()
-            .map(|alpn| *alpn == *b"h2")
-            .unwrap_or_default();
-        if is_h2 { conn.negotiated_h2() } else { conn }
+        if self.is_h2 {
+            conn.negotiated_h2()
+        } else {
+            conn
+        }
+    }
+}
+
+impl<S: Splittable + 'static> Splittable for HttpStream<S>
+where
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
+{
+    type ReadHalf = HttpStreamReadHalf<S>;
+    type WriteHalf = HttpStreamWriteHalf<S>;
+
+    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
+        let (read, write) = futures_util::AsyncReadExt::split(self.inner);
+        (HttpStreamReadHalf(read), HttpStreamWriteHalf(write))
+    }
+}
+
+pub struct HttpStreamReadHalf<S: Splittable>(futures_util::io::ReadHalf<HyperStream<S>>);
+
+impl<S: Splittable + 'static> AsyncRead for HttpStreamReadHalf<S>
+where
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
+{
+    async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
+        let res = futures_util::AsyncReadExt::read(&mut self.0, buf.ensure_init()).await;
+        if let Ok(len) = &res {
+            unsafe { buf.set_len(*len) };
+        }
+        BufResult(res, buf)
+    }
+}
+
+pub struct HttpStreamWriteHalf<S: Splittable>(futures_util::io::WriteHalf<HyperStream<S>>);
+
+impl<S: Splittable + 'static> AsyncWrite for HttpStreamWriteHalf<S>
+where
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
+{
+    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let slice = buf.as_init();
+        let res = futures_util::AsyncWriteExt::write(&mut self.0, slice).await;
+        BufResult(res, buf)
+    }
+
+    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
+        let slices = buf.iter_slice().map(io::IoSlice::new).collect::<Vec<_>>();
+        let res = futures_util::AsyncWriteExt::write_vectored(&mut self.0, &slices).await;
+        BufResult(res, buf)
+    }
+
+    async fn flush(&mut self) -> io::Result<()> {
+        futures_util::AsyncWriteExt::flush(&mut self.0).await
+    }
+
+    async fn shutdown(&mut self) -> io::Result<()> {
+        futures_util::AsyncWriteExt::close(&mut self.0).await
     }
 }

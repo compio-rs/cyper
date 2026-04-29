@@ -66,6 +66,28 @@ where
     }
 }
 
+impl<S: Splittable + 'static> futures_util::AsyncRead for HyperStream<S>
+where
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
+{
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        futures_util::AsyncRead::poll_read(Pin::new(&mut *self.0), cx, buf)
+    }
+
+    fn poll_read_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &mut [io::IoSliceMut<'_>],
+    ) -> Poll<io::Result<usize>> {
+        futures_util::AsyncRead::poll_read_vectored(Pin::new(&mut *self.0), cx, bufs)
+    }
+}
+
 impl<S: Splittable + 'static> hyper::rt::Write for HyperStream<S>
 where
     S::ReadHalf: AsyncRead + Unpin,
@@ -96,6 +118,36 @@ where
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        futures_util::AsyncWrite::poll_close(Pin::new(&mut *self.0), cx)
+    }
+}
+
+impl<S: Splittable + 'static> futures_util::AsyncWrite for HyperStream<S>
+where
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
+{
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        futures_util::AsyncWrite::poll_write(Pin::new(&mut *self.0), cx, buf)
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        futures_util::AsyncWrite::poll_write_vectored(Pin::new(&mut *self.0), cx, bufs)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        futures_util::AsyncWrite::poll_flush(Pin::new(&mut *self.0), cx)
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         futures_util::AsyncWrite::poll_close(Pin::new(&mut *self.0), cx)
     }
 }

@@ -128,6 +128,9 @@ pub enum Error {
     /// Redirect error.
     #[error("redirect: {0}")]
     Redirect(#[source] Box<dyn std::error::Error + Send + Sync>),
+    /// Proxy error.
+    #[error("proxy: {0}")]
+    Proxy(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 /// The result type used in `cyper`.

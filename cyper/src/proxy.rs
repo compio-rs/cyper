@@ -14,7 +14,7 @@
 //! # }
 //! ```
 
-use std::{error::Error as StdError, fmt, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use http::{HeaderMap, Uri, header::HeaderValue, uri::Scheme};
 use hyper_util::client::proxy::matcher;
@@ -69,70 +69,33 @@ pub trait IntoProxy {
     fn into_proxy(self) -> crate::Result<Url>;
 }
 
-impl IntoProxy for Url {
+impl<S: IntoUrl> IntoProxy for S {
     fn into_proxy(self) -> crate::Result<Url> {
-        if self.port().is_none()
-            && matches!(self.scheme(), "socks4" | "socks4a" | "socks5" | "socks5h")
-        {
-            let mut url = self;
-            let _ = url.set_port(Some(1080));
-            Ok(url)
-        } else {
-            Ok(self)
-        }
-    }
-}
-
-impl IntoProxy for &str {
-    fn into_proxy(self) -> crate::Result<Url> {
-        proxy_from_str(self)
-    }
-}
-
-impl IntoProxy for String {
-    fn into_proxy(self) -> crate::Result<Url> {
-        proxy_from_str(&self)
-    }
-}
-
-impl IntoProxy for &String {
-    fn into_proxy(self) -> crate::Result<Url> {
-        proxy_from_str(self)
-    }
-}
-
-fn proxy_from_str(s: &str) -> crate::Result<Url> {
-    match s.into_url() {
-        Ok(mut url) => {
-            if url.port().is_none()
-                && matches!(url.scheme(), "socks4" | "socks4a" | "socks5" | "socks5h")
-            {
-                let _ = url.set_port(Some(1080));
+        match self.as_str().into_url() {
+            Ok(mut url) => {
+                // If the scheme is a SOCKS protocol and no port is specified, set the default
+                if url.port().is_none()
+                    && matches!(url.scheme(), "socks4" | "socks4a" | "socks5" | "socks5h")
+                {
+                    let _ = url.set_port(Some(1080));
+                }
+                Ok(url)
             }
-            Ok(url)
-        }
-        Err(e) => {
-            if has_valid_scheme(&e) {
-                return Err(e);
+            Err(e) => {
+                let presumed_to_have_scheme = !matches!(
+                    e,
+                    crate::Error::BadScheme(_)
+                        | crate::Error::UrlParse(url::ParseError::RelativeUrlWithoutBase)
+                );
+                if presumed_to_have_scheme {
+                    return Err(e);
+                }
+                // the issue could have been caused by a missing scheme, so we try adding http://
+                let try_this = format!("http://{}", self.as_str());
+                try_this.into_url()
             }
-            // the issue could have been caused by a missing scheme, so we try adding http://
-            let try_this = format!("http://{s}");
-            try_this.into_url().map_err(|_| e)
         }
     }
-}
-
-fn has_valid_scheme(err: &crate::Error) -> bool {
-    let mut source = err.source();
-    while let Some(err) = source {
-        if let Some(parse_err) = err.downcast_ref::<url::ParseError>()
-            && *parse_err == url::ParseError::RelativeUrlWithoutBase
-        {
-            return false;
-        }
-        source = err.source();
-    }
-    true
 }
 
 impl Proxy {
@@ -216,7 +179,12 @@ impl Proxy {
 
     /// Adds custom headers to this Proxy.
     pub fn headers(mut self, headers: HeaderMap) -> Proxy {
-        self.extra.misc = Some(headers);
+        match self.intercept {
+            Intercept::All(_) | Intercept::Http(_) | Intercept::Https(_) | Intercept::Custom(_) => {
+                self.extra.misc = Some(headers);
+            }
+        }
+
         self
     }
 
@@ -367,6 +335,19 @@ pub(crate) struct Intercepted {
 }
 
 impl Matcher {
+    pub(crate) fn system() -> Self {
+        Self {
+            inner: Matcher_::Util(matcher::Matcher::from_system()),
+            extra: Extra {
+                auth: None,
+                misc: None,
+            },
+            // maybe env vars have auth!
+            maybe_has_http_auth: true,
+            maybe_has_http_custom_headers: true,
+        }
+    }
+
     pub(crate) fn intercept(&self, dst: &Uri) -> Option<Intercepted> {
         let inner = match self.inner {
             Matcher_::Util(ref m) => m.intercept(dst),
@@ -443,6 +424,11 @@ impl Intercepted {
         }
         None
     }
+
+    #[cfg(feature = "socks")]
+    pub(crate) fn raw_auth(&self) -> Option<(&str, &str)> {
+        self.inner.raw_auth()
+    }
 }
 
 impl fmt::Debug for Intercepted {
@@ -466,6 +452,7 @@ fn url_auth(url: &mut Url, username: &str, password: &str) {
 
 #[derive(Clone)]
 struct Custom {
+    #[allow(clippy::type_complexity)]
     func: Arc<dyn Fn(&Url) -> Option<crate::Result<Url>> + Send + Sync + 'static>,
     no_proxy: Option<NoProxy>,
 }

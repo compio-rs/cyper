@@ -19,7 +19,11 @@ cyper-core = { workspace = true }
 
 http = "1.0.0"
 hyper = { workspace = true, features = ["client", "http1"] }
-hyper-util = { workspace = true, features = ["client-legacy", "client-proxy", "http1"] }
+hyper-util = { workspace = true, features = [
+    "client-legacy",
+    "client-proxy",
+    "http1",
+] }
 h3 = { version = "0.0.8", optional = true }
 
 nyquest-interface = { version = "0.4.0", optional = true }
@@ -80,6 +84,7 @@ http3 = [
 http3-altsvc = ["http3"]
 stream = []
 multipart = ["stream", "dep:mime_guess", "dep:percent-encoding"]
+socks = []
 all = [
     "cookies",
     "json",
@@ -90,6 +95,7 @@ all = [
     "http3-altsvc",
     "stream",
     "multipart",
+    "socks",
 ]
 
 nyquest = ["dep:nyquest-interface", "compio/sync", "compio/time"]
