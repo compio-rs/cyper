@@ -21,7 +21,7 @@ use crate::{
 /// it.
 #[derive(Debug, Clone)]
 pub struct Connector {
-    inner: HttpConnector,
+    inner: HttpsConnector,
     proxies: Arc<Vec<proxy::Matcher>>,
 }
 
@@ -33,7 +33,7 @@ impl Connector {
         proxies: Arc<Vec<proxy::Matcher>>,
     ) -> Self {
         Self {
-            inner: HttpConnector::new(tls, resolver),
+            inner: HttpsConnector::new(tls, resolver),
             proxies,
         }
     }
@@ -68,7 +68,7 @@ impl Service<Uri> for Connector {
 }
 
 async fn connect_via_proxy(
-    connector: HttpConnector,
+    connector: HttpsConnector,
     dst: Uri,
     intercepted: Intercepted,
 ) -> crate::Result<HttpStream<HttpStream>> {
@@ -82,8 +82,6 @@ async fn connect_via_proxy(
         return socks::connect(connector, dst, intercepted).await;
     }
 
-    let auth = intercepted.basic_auth().cloned();
-
     match dst.scheme_str() {
         #[cfg(any(feature = "native-tls", feature = "rustls"))]
         Some("https") => {
@@ -91,8 +89,8 @@ async fn connect_via_proxy(
 
             let tls = connector.tls.clone();
             let mut tunnel = Tunnel::new(proxy_uri, connector);
-            if let Some(auth) = auth {
-                tunnel = tunnel.with_auth(auth);
+            if let Some(auth) = intercepted.basic_auth() {
+                tunnel = tunnel.with_auth(auth.clone());
             }
             let tunneled = tunnel
                 .call(dst.clone())
@@ -109,18 +107,18 @@ async fn connect_via_proxy(
 }
 
 #[derive(Debug, Clone)]
-struct HttpConnector {
+struct HttpsConnector {
     tls: TlsBackend,
     resolver: Option<ArcResolver>,
 }
 
-impl HttpConnector {
+impl HttpsConnector {
     pub fn new(tls: TlsBackend, resolver: Option<ArcResolver>) -> Self {
         Self { tls, resolver }
     }
 }
 
-impl Service<Uri> for HttpConnector {
+impl Service<Uri> for HttpsConnector {
     type Error = crate::Error;
     type Future = Pin<Box<dyn Future<Output = crate::Result<Self::Response>> + Send>>;
     type Response = HttpStream;
@@ -144,21 +142,21 @@ mod socks {
     use hyper_util::client::legacy::connect::proxy::{SocksV4, SocksV5};
     use tower_service::Service;
 
-    use super::HttpConnector;
+    use super::HttpsConnector;
     use crate::{Error, HttpStream, proxy::Intercepted};
 
     pub(super) async fn connect(
-        connector: HttpConnector,
+        connector: HttpsConnector,
         dst: Uri,
         intercepted: Intercepted,
     ) -> crate::Result<HttpStream<HttpStream>> {
-        let proxy_uri = intercepted.uri().clone();
+        let proxy_uri = intercepted.uri();
         let raw_auth = intercepted
             .raw_auth()
             .map(|(u, p)| (u.to_owned(), p.to_owned()));
         let tls = connector.tls.clone();
 
-        // Build an http:// URI for the HttpConnector to connect to the
+        // Build an http:// URI for the HttpsConnector to connect to the
         // SOCKS proxy via TCP. The SOCKS scheme (socks5://, etc.) only
         // indicates the handshake protocol, not the transport.
         let host = proxy_uri.host().expect("SOCKS proxy URI should have host");
