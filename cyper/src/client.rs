@@ -10,7 +10,8 @@ use url::Url;
 use {compio::bytes::Bytes, cookie_store::CookieStore, std::sync::RwLock};
 
 use crate::{
-    Body, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend, redirect,
+    Body, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend, proxy,
+    redirect,
     resolve::{ArcResolver, Resolve},
 };
 
@@ -215,6 +216,18 @@ impl Client {
 
     #[allow(unused_mut)]
     async fn send_request(&self, mut request: http::Request<Body>, url: &Url) -> Result<Response> {
+        // Inject proxy-authorization header for HTTP forward proxies
+        if let Ok(uri) = url.as_str().parse::<Uri>() {
+            for matcher in self.client.proxies.iter() {
+                if let Some(auth) = matcher.http_non_tunnel_basic_auth(&uri) {
+                    request
+                        .headers_mut()
+                        .insert(http::header::PROXY_AUTHORIZATION, auth.clone());
+                    break;
+                }
+            }
+        }
+
         #[cfg(feature = "http3")]
         {
             #[cfg(feature = "http3-altsvc")]
@@ -332,6 +345,7 @@ struct ClientInner {
     headers: HeaderMap,
     redirect_policy: redirect::Policy,
     referer: bool,
+    proxies: Arc<Vec<proxy::Matcher>>,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
 }
@@ -346,6 +360,8 @@ pub struct ClientBuilder {
     resolver: Option<ArcResolver>,
     redirect_policy: redirect::Policy,
     referer: bool,
+    proxies: Vec<proxy::Proxy>,
+    no_proxy: Option<proxy::NoProxy>,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
 }
@@ -365,6 +381,8 @@ impl ClientBuilder {
             resolver: None,
             redirect_policy: redirect::Policy::default(),
             referer: true,
+            proxies: Vec::new(),
+            no_proxy: None,
             #[cfg(feature = "cookies")]
             cookies: None,
         }
@@ -374,15 +392,34 @@ impl ClientBuilder {
     pub fn build(self) -> Client {
         #[allow(unused)]
         let accept_invalid_certs = self.tls.accept_invalid_certs();
+        let no_proxy = self.no_proxy;
+        let proxies: Arc<Vec<proxy::Matcher>> = Arc::new(
+            self.proxies
+                .into_iter()
+                .map(|p| {
+                    if let Some(ref np) = no_proxy {
+                        p.no_proxy(Some(np.clone()))
+                    } else {
+                        p
+                    }
+                    .into_matcher()
+                })
+                .collect(),
+        );
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
             .timer(CompioTimer)
-            .build(Connector::new(self.tls, self.resolver.clone()));
+            .build(Connector::new(
+                self.tls,
+                self.resolver.clone(),
+                proxies.clone(),
+            ));
         let client_ref = ClientInner {
             client,
             headers: self.headers,
             redirect_policy: self.redirect_policy,
             referer: self.referer,
+            proxies,
             #[cfg(feature = "cookies")]
             cookies: self.cookies,
         };
@@ -459,6 +496,22 @@ impl ClientBuilder {
         } else {
             self.cookies = None;
         }
+        self
+    }
+
+    /// Add a `Proxy` to the list of proxies the `Client` will use.
+    ///
+    /// Proxies are tried in the order they are added.
+    pub fn proxy(mut self, proxy: proxy::Proxy) -> Self {
+        self.proxies.push(proxy);
+        self
+    }
+
+    /// Add a `NoProxy` exclusion list to the `Client`.
+    ///
+    /// The `NoProxy` rules will be applied to all proxies added to this client.
+    pub fn no_proxy(mut self, no_proxy: proxy::NoProxy) -> Self {
+        self.no_proxy = Some(no_proxy);
         self
     }
 

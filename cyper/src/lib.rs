@@ -38,6 +38,9 @@ pub mod resolve;
 /// Redirect handling
 pub mod redirect;
 
+/// Proxy support
+pub mod proxy;
+
 mod util;
 
 #[cfg(feature = "http3")]
