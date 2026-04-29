@@ -261,6 +261,7 @@ async fn tunnel_detects_unsuccessful() {
     assert!(
         err_msg.contains("400")
             || err_msg.contains("unsuccessful")
+            || err_msg.contains("Unsuccessful")
             || err_msg.contains("Bad Request"),
         "expected error to mention 400, got: {err_msg}"
     );
@@ -296,6 +297,7 @@ async fn tunnel_includes_proxy_auth() {
     assert!(
         err_msg.contains("400")
             || err_msg.contains("unsuccessful")
+            || err_msg.contains("Unsuccessful")
             || err_msg.contains("Bad Request"),
         "expected error from failed CONNECT, got: {err_msg}"
     );
