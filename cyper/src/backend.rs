@@ -1,4 +1,4 @@
-#[cfg(any(feature = "native-tls", feature = "rustls"))]
+#[cfg(tls)]
 use {
     crate::{Error, Result},
     compio::tls::TlsConnector,
@@ -78,7 +78,7 @@ impl TlsBackend {
         self.accept_invalid_certs
     }
 
-    #[cfg(any(feature = "native-tls", feature = "rustls"))]
+    #[cfg(tls)]
     pub(crate) fn create_connector(&self) -> Result<TlsConnector> {
         match &self.ty {
             TlsBackendInner::None => Err(Error::NoTlsBackend),

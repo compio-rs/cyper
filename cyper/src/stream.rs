@@ -53,7 +53,7 @@ impl HttpStream {
                 let _tls = tls;
                 HyperStream::new_plain(stream)
             }
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            #[cfg(tls)]
             "https" => {
                 let port = port.unwrap_or(443);
                 let stream = Self::connect_tcp(&uri, host, port, resolver).await?;
@@ -120,7 +120,7 @@ where
                 let _tls = tls;
                 HyperStream::new_plain(stream)
             }
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            #[cfg(tls)]
             "https" => {
                 let host = uri.host().expect("there should be host");
                 // `Uri::host()` includes brackets for IPv6, we must strip them.
@@ -278,7 +278,7 @@ where
 
 pub enum WrappedHttpStream {
     Plain(HttpStream),
-    #[cfg(any(feature = "native-tls", feature = "rustls"))]
+    #[cfg(tls)]
     Embedded(HttpStream<HttpStream>),
 }
 
@@ -290,7 +290,7 @@ impl hyper::rt::Read for WrappedHttpStream {
     ) -> Poll<io::Result<()>> {
         match &mut *self {
             WrappedHttpStream::Plain(s) => Pin::new(s).poll_read(cx, buf),
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            #[cfg(tls)]
             WrappedHttpStream::Embedded(s) => Pin::new(s).poll_read(cx, buf),
         }
     }
@@ -304,7 +304,7 @@ impl hyper::rt::Write for WrappedHttpStream {
     ) -> Poll<io::Result<usize>> {
         match &mut *self {
             WrappedHttpStream::Plain(s) => Pin::new(s).poll_write(cx, buf),
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            #[cfg(tls)]
             WrappedHttpStream::Embedded(s) => Pin::new(s).poll_write(cx, buf),
         }
     }
@@ -316,7 +316,7 @@ impl hyper::rt::Write for WrappedHttpStream {
     ) -> Poll<io::Result<usize>> {
         match &mut *self {
             WrappedHttpStream::Plain(s) => Pin::new(s).poll_write_vectored(cx, bufs),
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            #[cfg(tls)]
             WrappedHttpStream::Embedded(s) => Pin::new(s).poll_write_vectored(cx, bufs),
         }
     }
@@ -324,7 +324,7 @@ impl hyper::rt::Write for WrappedHttpStream {
     fn is_write_vectored(&self) -> bool {
         match self {
             WrappedHttpStream::Plain(s) => s.is_write_vectored(),
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            #[cfg(tls)]
             WrappedHttpStream::Embedded(s) => s.is_write_vectored(),
         }
     }
@@ -332,7 +332,7 @@ impl hyper::rt::Write for WrappedHttpStream {
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match &mut *self {
             WrappedHttpStream::Plain(s) => Pin::new(s).poll_flush(cx),
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            #[cfg(tls)]
             WrappedHttpStream::Embedded(s) => Pin::new(s).poll_flush(cx),
         }
     }
@@ -340,7 +340,7 @@ impl hyper::rt::Write for WrappedHttpStream {
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match &mut *self {
             WrappedHttpStream::Plain(s) => Pin::new(s).poll_shutdown(cx),
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            #[cfg(tls)]
             WrappedHttpStream::Embedded(s) => Pin::new(s).poll_shutdown(cx),
         }
     }
@@ -350,7 +350,7 @@ impl Connection for WrappedHttpStream {
     fn connected(&self) -> Connected {
         match self {
             WrappedHttpStream::Plain(s) => s.connected(),
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            #[cfg(tls)]
             WrappedHttpStream::Embedded(s) => s.connected(),
         }
     }

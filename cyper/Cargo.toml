@@ -65,6 +65,9 @@ serde = { version = "1", features = ["derive"] }
 time = "0.3"
 tower = { workspace = true }
 
+[build-dependencies]
+cfg_aliases = { workspace = true }
+
 [features]
 default = ["native-tls"]
 native-tls = ["compio/native-tls"]

@@ -83,7 +83,7 @@ async fn connect_via_proxy(
     }
 
     match dst.scheme_str() {
-        #[cfg(any(feature = "native-tls", feature = "rustls"))]
+        #[cfg(tls)]
         Some("https") => {
             use hyper_util::client::legacy::connect::proxy::Tunnel;
 
@@ -191,7 +191,7 @@ mod socks {
         // After the SOCKS handshake we have a TCP tunnel to the destination.
         // Wrap with TLS if targeting HTTPS.
         match dst.scheme_str() {
-            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            #[cfg(tls)]
             Some("https") => Ok(HttpStream::connect_with(stream, dst, tls)
                 .await?
                 .into_wrapped()),

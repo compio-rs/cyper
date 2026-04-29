@@ -229,7 +229,7 @@ async fn tunnel_mock(handler: impl Fn(&str) -> String + Send + 'static) -> Tunne
     }
 }
 
-#[cfg(any(feature = "native-tls", feature = "rustls"))]
+#[cfg(tls)]
 #[compio::test]
 async fn tunnel_detects_unsuccessful() {
     let mock = tunnel_mock(move |request: &str| {
@@ -268,7 +268,7 @@ async fn tunnel_detects_unsuccessful() {
     );
 }
 
-#[cfg(any(feature = "native-tls", feature = "rustls"))]
+#[cfg(tls)]
 #[compio::test]
 async fn tunnel_includes_proxy_auth() {
     let mock = tunnel_mock(move |request: &str| {
