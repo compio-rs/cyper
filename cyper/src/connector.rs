@@ -10,7 +10,7 @@ use send_wrapper::SendWrapper;
 use tower_service::Service;
 
 use crate::{
-    HttpStream, TlsBackend,
+    HttpStream, TlsBackend, WrappedHttpStream,
     proxy::{self, Intercepted},
     resolve::ArcResolver,
 };
@@ -42,7 +42,7 @@ impl Connector {
 impl Service<Uri> for Connector {
     type Error = crate::Error;
     type Future = Pin<Box<dyn Future<Output = crate::Result<Self::Response>> + Send>>;
-    type Response = HttpStream<HttpStream>;
+    type Response = WrappedHttpStream;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -71,7 +71,7 @@ async fn connect_via_proxy(
     connector: HttpsConnector,
     dst: Uri,
     intercepted: Intercepted,
-) -> crate::Result<HttpStream<HttpStream>> {
+) -> crate::Result<WrappedHttpStream> {
     let proxy_uri = intercepted.uri().clone();
 
     #[cfg(feature = "socks")]
@@ -96,7 +96,9 @@ async fn connect_via_proxy(
                 .call(dst.clone())
                 .await
                 .map_err(|e| crate::Error::Proxy(e.into()))?;
-            HttpStream::connect_with(tunneled, dst, tls).await
+            Ok(HttpStream::connect_with(tunneled, dst, tls)
+                .await?
+                .into_wrapped())
         }
         _ => Ok(
             HttpStream::connect(proxy_uri, connector.tls, connector.resolver, true)
@@ -143,13 +145,13 @@ mod socks {
     use tower_service::Service;
 
     use super::HttpsConnector;
-    use crate::{Error, HttpStream, proxy::Intercepted};
+    use crate::{Error, HttpStream, WrappedHttpStream, proxy::Intercepted};
 
     pub(super) async fn connect(
         connector: HttpsConnector,
         dst: Uri,
         intercepted: Intercepted,
-    ) -> crate::Result<HttpStream<HttpStream>> {
+    ) -> crate::Result<WrappedHttpStream> {
         let proxy_uri = intercepted.uri();
         let raw_auth = intercepted
             .raw_auth()
@@ -190,7 +192,9 @@ mod socks {
         // Wrap with TLS if targeting HTTPS.
         match dst.scheme_str() {
             #[cfg(any(feature = "native-tls", feature = "rustls"))]
-            Some("https") => HttpStream::connect_with(stream, dst, tls).await,
+            Some("https") => Ok(HttpStream::connect_with(stream, dst, tls)
+                .await?
+                .into_wrapped()),
             _ => Ok(stream.into_wrapped()),
         }
     }

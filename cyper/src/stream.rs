@@ -96,6 +96,16 @@ impl HttpStream {
 
         Ok(stream)
     }
+
+    pub fn into_wrapped(self) -> WrappedHttpStream {
+        WrappedHttpStream::Plain(self)
+    }
+}
+
+impl HttpStream<HttpStream> {
+    pub fn into_wrapped(self) -> WrappedHttpStream {
+        WrappedHttpStream::Embedded(self)
+    }
 }
 
 impl<S: Splittable + 'static> HttpStream<S>
@@ -133,14 +143,6 @@ where
             is_h2,
         })
     }
-
-    pub fn into_wrapped(self) -> HttpStream<Self> {
-        HttpStream {
-            is_proxy: self.is_proxy,
-            is_h2: self.is_h2,
-            inner: HyperStream::new_plain(self),
-        }
-    }
 }
 
 impl<S: Splittable + 'static> hyper::rt::Read for HttpStream<S>
@@ -162,10 +164,7 @@ where
         // receives our data before we wait for its response.
         // In HTTP/2 the stream is split, so this combined poll_read
         // is not called and concurrent reads/writes are unaffected.
-        ready!(hyper::rt::Write::poll_flush(
-            Pin::new(&mut self.inner),
-            cx
-        ))?;
+        ready!(hyper::rt::Write::poll_flush(Pin::new(&mut self.inner), cx))?;
         Pin::new(&mut self.inner).poll_read(cx, buf)
     }
 }
@@ -274,5 +273,85 @@ where
 
     async fn shutdown(&mut self) -> io::Result<()> {
         futures_util::AsyncWriteExt::close(&mut self.0).await
+    }
+}
+
+pub enum WrappedHttpStream {
+    Plain(HttpStream),
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
+    Embedded(HttpStream<HttpStream>),
+}
+
+impl hyper::rt::Read for WrappedHttpStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> Poll<io::Result<()>> {
+        match &mut *self {
+            WrappedHttpStream::Plain(s) => Pin::new(s).poll_read(cx, buf),
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            WrappedHttpStream::Embedded(s) => Pin::new(s).poll_read(cx, buf),
+        }
+    }
+}
+
+impl hyper::rt::Write for WrappedHttpStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        match &mut *self {
+            WrappedHttpStream::Plain(s) => Pin::new(s).poll_write(cx, buf),
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            WrappedHttpStream::Embedded(s) => Pin::new(s).poll_write(cx, buf),
+        }
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        match &mut *self {
+            WrappedHttpStream::Plain(s) => Pin::new(s).poll_write_vectored(cx, bufs),
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            WrappedHttpStream::Embedded(s) => Pin::new(s).poll_write_vectored(cx, bufs),
+        }
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        match self {
+            WrappedHttpStream::Plain(s) => s.is_write_vectored(),
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            WrappedHttpStream::Embedded(s) => s.is_write_vectored(),
+        }
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match &mut *self {
+            WrappedHttpStream::Plain(s) => Pin::new(s).poll_flush(cx),
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            WrappedHttpStream::Embedded(s) => Pin::new(s).poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match &mut *self {
+            WrappedHttpStream::Plain(s) => Pin::new(s).poll_shutdown(cx),
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            WrappedHttpStream::Embedded(s) => Pin::new(s).poll_shutdown(cx),
+        }
+    }
+}
+
+impl Connection for WrappedHttpStream {
+    fn connected(&self) -> Connected {
+        match self {
+            WrappedHttpStream::Plain(s) => s.connected(),
+            #[cfg(any(feature = "native-tls", feature = "rustls"))]
+            WrappedHttpStream::Embedded(s) => s.connected(),
+        }
     }
 }
