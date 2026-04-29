@@ -30,16 +30,10 @@ mod blocking;
 ///
 /// ## Missing features
 /// * `caching_behavior`
-/// * `use_default_proxy`: error on use
 pub struct CyperBackend;
 
 impl CyperBackend {
     pub(crate) fn create_client(&self, options: ClientOptions) -> Result<CyperClient> {
-        if options.use_default_proxy {
-            return Err(NyquestError::Io(std::io::Error::other(
-                "cyper nyquest backend does not support use_default_proxy option",
-            )));
-        }
         let mut builder = crate::ClientBuilder::new().default_headers({
             let mut headers = HeaderMap::new();
             for (k, v) in options.default_headers {
@@ -47,6 +41,9 @@ impl CyperBackend {
             }
             headers
         });
+        if !options.use_default_proxy {
+            builder = builder.no_proxy();
+        }
         if !options.follow_redirects {
             builder = builder.redirect(crate::redirect::Policy::none())
         }

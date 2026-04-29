@@ -146,8 +146,9 @@ async fn test_no_proxy() {
 
     let proxy_url = format!("http://{}", server.addr());
     let client = Client::builder()
-        .proxy(Proxy::http(&proxy_url).unwrap())
-        .no_proxy(NoProxy::from_string(&server.addr().ip().to_string()).unwrap())
+        .proxy(Proxy::http(&proxy_url).unwrap().no_proxy(Some(
+            NoProxy::from_string(&server.addr().ip().to_string()).unwrap(),
+        )))
         .build();
 
     // Request to the same server; should bypass proxy and go direct

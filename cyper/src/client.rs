@@ -398,7 +398,7 @@ pub struct ClientBuilder {
     redirect_policy: redirect::Policy,
     referer: bool,
     proxies: Vec<proxy::Proxy>,
-    no_proxy: Option<proxy::NoProxy>,
+    no_proxy: bool,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
 }
@@ -419,7 +419,7 @@ impl ClientBuilder {
             redirect_policy: redirect::Policy::default(),
             referer: true,
             proxies: Vec::new(),
-            no_proxy: None,
+            no_proxy: false,
             #[cfg(feature = "cookies")]
             cookies: None,
         }
@@ -429,21 +429,10 @@ impl ClientBuilder {
     pub fn build(self) -> Client {
         #[allow(unused)]
         let accept_invalid_certs = self.tls.accept_invalid_certs();
-        let no_proxy = self.no_proxy;
-        let proxies = if !self.proxies.is_empty() {
-            Arc::new(
-                self.proxies
-                    .into_iter()
-                    .map(|p| {
-                        if let Some(ref np) = no_proxy {
-                            p.no_proxy(Some(np.clone()))
-                        } else {
-                            p
-                        }
-                        .into_matcher()
-                    })
-                    .collect(),
-            )
+        let proxies = if self.no_proxy {
+            Arc::new(vec![])
+        } else if !self.proxies.is_empty() {
+            Arc::new(self.proxies.into_iter().map(|p| p.into_matcher()).collect())
         } else {
             Arc::new(vec![proxy::Matcher::system()])
         };
@@ -557,8 +546,8 @@ impl ClientBuilder {
     /// Add a `NoProxy` exclusion list to the `Client`.
     ///
     /// The `NoProxy` rules will be applied to all proxies added to this client.
-    pub fn no_proxy(mut self, no_proxy: proxy::NoProxy) -> Self {
-        self.no_proxy = Some(no_proxy);
+    pub fn no_proxy(mut self) -> Self {
+        self.no_proxy = true;
         self
     }
 
