@@ -1,9 +1,8 @@
 use std::{
     future::Future,
-    io,
     pin::Pin,
     sync::Arc,
-    task::{Context, Poll, ready},
+    task::{Context, Poll},
 };
 
 use hyper::Uri;
@@ -68,117 +67,6 @@ impl Service<Uri> for Connector {
     }
 }
 
-/// A stream wrapper that flushes buffered writes before reading.
-///
-/// This is a **temporary** wrapper used during proxy CONNECT / SOCKS
-/// handshakes. `hyper_util::rt::write_all` only calls `poll_write` (never
-/// `poll_flush`), which would leave data buffered in compio's
-/// `AsyncWriteStream` forever — causing a hang. Since the handshake
-/// protocol is always write-then-read (CONNECT request → response,
-/// SOCKS greeting → reply → request → reply), we flush any pending
-/// buffered writes in `poll_read` so the remote peer actually receives
-/// the data before we wait for its response.
-///
-/// The wrapper is stripped after the handshake via [`into_inner`],
-/// preserving the `HttpStream<HttpStream>` nesting for
-/// HTTPS-over-HTTPS-proxy support.
-///
-/// [`into_inner`]: AutoFlushWrite::into_inner
-struct AutoFlushWrite<S>(S);
-
-impl<S> AutoFlushWrite<S> {
-    /// Strip the auto-flush wrapper, returning the underlying stream.
-    fn into_inner(self) -> S {
-        self.0
-    }
-}
-
-impl<S> hyper::rt::Read for AutoFlushWrite<S>
-where
-    S: hyper::rt::Read + hyper::rt::Write + Unpin,
-{
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: hyper::rt::ReadBufCursor<'_>,
-    ) -> Poll<io::Result<()>> {
-        // Flush any buffered writes before reading. hyper_util's
-        // write_all (used by Tunnel / SOCKS handshake) never calls
-        // poll_flush; data would otherwise sit in compio's
-        // AsyncWriteStream buffer forever while we wait for a
-        // response that will never arrive.
-        ready!(Pin::new(&mut self.0).poll_flush(cx))?;
-        Pin::new(&mut self.0).poll_read(cx, buf)
-    }
-}
-
-impl<S> hyper::rt::Write for AutoFlushWrite<S>
-where
-    S: hyper::rt::Write + Unpin,
-{
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.0).poll_write(cx, buf)
-    }
-
-    fn poll_write_vectored(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        bufs: &[io::IoSlice<'_>],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.0).poll_write_vectored(cx, bufs)
-    }
-
-    fn is_write_vectored(&self) -> bool {
-        self.0.is_write_vectored()
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.0).poll_flush(cx)
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.0).poll_shutdown(cx)
-    }
-}
-
-/// A connector adapter that wraps response streams in [`AutoFlushWrite`].
-///
-/// Used with `hyper_util`'s `Tunnel` and `SocksV4`/`SocksV5` so that
-/// handshake writes are flushed immediately. The `AutoFlushWrite` wrapper
-/// is stripped after the handshake — it never leaks into normal HTTP
-/// request/response processing.
-struct AutoFlushConnector<C> {
-    inner: C,
-}
-
-impl<C> Service<Uri> for AutoFlushConnector<C>
-where
-    C: Service<Uri>,
-    C::Future: Send + 'static,
-    C::Response: Send + 'static,
-    C::Error: Send + 'static,
-{
-    type Error = C::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-    type Response = AutoFlushWrite<C::Response>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, dst: Uri) -> Self::Future {
-        let fut = self.inner.call(dst);
-        Box::pin(async move {
-            let stream = fut.await?;
-            Ok(AutoFlushWrite(stream))
-        })
-    }
-}
-
 async fn connect_via_proxy(
     connector: HttpConnector,
     dst: Uri,
@@ -191,18 +79,7 @@ async fn connect_via_proxy(
         proxy_uri.scheme_str(),
         Some("socks4" | "socks4a" | "socks5" | "socks5h")
     ) {
-        // Wrap in AutoFlushConnector for the same reason as the Tunnel
-        // path above: hyper_util's SOCKS handshake code uses write_all
-        // without poll_flush, leaving data buffered in compio's
-        // AsyncWriteStream.
-        let tls = connector.tls.clone();
-        return socks::connect(
-            AutoFlushConnector { inner: connector },
-            dst,
-            intercepted,
-            tls,
-        )
-        .await;
+        return socks::connect(connector, dst, intercepted).await;
     }
 
     let auth = intercepted.basic_auth().cloned();
@@ -213,13 +90,7 @@ async fn connect_via_proxy(
             use hyper_util::client::legacy::connect::proxy::Tunnel;
 
             let tls = connector.tls.clone();
-            // Wrap in AutoFlushConnector so the CONNECT request is flushed
-            // to the proxy. hyper_util's write_all only calls poll_write
-            // (never poll_flush), which would leave data buffered in
-            // compio's AsyncWriteStream forever. AutoFlushWrite strips off
-            // after the tunnel handshake (see connect_with below).
-            let autoflush = AutoFlushConnector { inner: connector };
-            let mut tunnel = Tunnel::new(proxy_uri, autoflush);
+            let mut tunnel = Tunnel::new(proxy_uri, connector);
             if let Some(auth) = auth {
                 tunnel = tunnel.with_auth(auth);
             }
@@ -227,11 +98,7 @@ async fn connect_via_proxy(
                 .call(dst.clone())
                 .await
                 .map_err(|e| crate::Error::Proxy(e.into()))?;
-            // Strip the AutoFlushWrite wrapper — we only needed it for
-            // the CONNECT handshake. Normal HTTP I/O through the tunnel
-            // is handled by hyper's own protocol code which flushes
-            // properly.
-            HttpStream::connect_with(tunneled.into_inner(), dst, tls).await
+            HttpStream::connect_with(tunneled, dst, tls).await
         }
         _ => Ok(
             HttpStream::connect(proxy_uri, connector.tls, connector.resolver, true)
@@ -277,19 +144,19 @@ mod socks {
     use hyper_util::client::legacy::connect::proxy::{SocksV4, SocksV5};
     use tower_service::Service;
 
-    use super::{AutoFlushConnector, HttpConnector};
-    use crate::{Error, HttpStream, TlsBackend, proxy::Intercepted};
+    use super::HttpConnector;
+    use crate::{Error, HttpStream, proxy::Intercepted};
 
     pub(super) async fn connect(
-        connector: AutoFlushConnector<HttpConnector>,
+        connector: HttpConnector,
         dst: Uri,
         intercepted: Intercepted,
-        tls: TlsBackend,
     ) -> crate::Result<HttpStream<HttpStream>> {
         let proxy_uri = intercepted.uri().clone();
         let raw_auth = intercepted
             .raw_auth()
             .map(|(u, p)| (u.to_owned(), p.to_owned()));
+        let tls = connector.tls.clone();
 
         // Build an http:// URI for the HttpConnector to connect to the
         // SOCKS proxy via TCP. The SOCKS scheme (socks5://, etc.) only
@@ -302,16 +169,12 @@ mod socks {
 
         let is_local_dns = matches!(proxy_uri.scheme_str(), Some("socks4") | Some("socks5"));
 
-        // The SocksV4/V5 handshake uses write_all which doesn't flush.
-        // AutoFlushConnector ensured every write was flushed; strip the
-        // AutoFlushWrite wrapper now that the handshake is done.
         let stream: HttpStream = match proxy_uri.scheme_str() {
             Some("socks4") | Some("socks4a") => {
                 let mut svc = SocksV4::new(http_proxy_uri, connector).local_dns(is_local_dns);
                 svc.call(dst.clone())
                     .await
                     .map_err(|e| Error::Proxy(Box::new(e)))?
-                    .into_inner()
             }
             Some("socks5") | Some("socks5h") => {
                 let mut svc = SocksV5::new(http_proxy_uri, connector).local_dns(is_local_dns);
@@ -321,7 +184,6 @@ mod socks {
                 svc.call(dst.clone())
                     .await
                     .map_err(|e| Error::Proxy(Box::new(e)))?
-                    .into_inner()
             }
             _ => unreachable!(),
         };

@@ -2,7 +2,7 @@ use std::{
     io,
     net::SocketAddr,
     pin::Pin,
-    task::{Context, Poll},
+    task::{Context, Poll, ready},
 };
 
 use compio::{
@@ -153,6 +153,19 @@ where
         cx: &mut Context<'_>,
         buf: hyper::rt::ReadBufCursor<'_>,
     ) -> Poll<io::Result<()>> {
+        // Flush any buffered writes before reading. This is necessary
+        // because code like hyper_util::rt::write_all (used by Tunnel
+        // and SOCKS handshakes) and hyper's own body encoder may call
+        // poll_write without poll_flush, leaving data buffered in
+        // compio's AsyncWriteStream. Since HTTP/1.1 is half-duplex
+        // (write then read), flushing here ensures the remote peer
+        // receives our data before we wait for its response.
+        // In HTTP/2 the stream is split, so this combined poll_read
+        // is not called and concurrent reads/writes are unaffected.
+        ready!(hyper::rt::Write::poll_flush(
+            Pin::new(&mut self.inner),
+            cx
+        ))?;
         Pin::new(&mut self.inner).poll_read(cx, buf)
     }
 }
