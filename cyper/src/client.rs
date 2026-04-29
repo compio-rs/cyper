@@ -118,13 +118,14 @@ impl Client {
         // Redirect loop
         let mut current_url = url;
         let mut prev_urls: Vec<Url> = Vec::new();
+        let mut should_stop = false;
 
         loop {
             #[cfg(feature = "cookies")]
             self.store_response_cookies(&current_url, &res);
 
             let status = res.status();
-            if !status.is_redirection() {
+            if !status.is_redirection() || should_stop {
                 return Ok(res);
             }
 
@@ -147,22 +148,20 @@ impl Client {
                 .redirect_policy
                 .check(status, &next_url, &prev_urls);
 
+            current_url = next_url;
+
             match action {
                 redirect::ActionKind::Follow => {
-                    if next_url.scheme() != "http" && next_url.scheme() != "https" {
-                        return Err(crate::Error::BadScheme(next_url.scheme().to_owned()));
-                    }
-
                     redirect::remove_sensitive_headers(
                         &mut redirect_headers,
-                        &next_url,
+                        &current_url,
                         &prev_urls,
                     );
 
                     if self.client.referer
                         && let Some(previous_url) = prev_urls.last()
                     {
-                        if let Some(v) = redirect::make_referer(&next_url, previous_url) {
+                        if let Some(v) = redirect::make_referer(&current_url, previous_url) {
                             redirect_headers.insert(http::header::REFERER, v);
                         } else {
                             redirect_headers.remove(http::header::REFERER);
@@ -197,7 +196,7 @@ impl Client {
                     let req = http::Request::builder()
                         .method(method.clone())
                         .uri(
-                            next_url
+                            current_url
                                 .as_str()
                                 .parse::<Uri>()
                                 .expect("a parsed Url should always be a valid Uri"),
@@ -207,10 +206,9 @@ impl Client {
                     let mut req = req;
                     *req.headers_mut() = redirect_headers.clone();
 
-                    current_url = next_url;
                     res = self.send_request(req, &current_url).await?;
                 }
-                redirect::ActionKind::Stop => return Ok(res),
+                redirect::ActionKind::Stop => should_stop = true,
                 redirect::ActionKind::Error(e) => {
                     return Err(crate::Error::Redirect(e));
                 }
