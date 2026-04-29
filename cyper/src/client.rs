@@ -4,7 +4,7 @@ use std::task::{Context, Poll};
 
 use cyper_core::{CompioExecutor, CompioTimer};
 use http::{HeaderValue, header::Entry};
-use hyper::{HeaderMap, Method, StatusCode, Uri, header::REFERER};
+use hyper::{HeaderMap, Method, StatusCode, Uri};
 use url::Url;
 #[cfg(feature = "cookies")]
 use {compio::bytes::Bytes, cookie_store::CookieStore, std::sync::RwLock};
@@ -163,9 +163,9 @@ impl Client {
                         && let Some(previous_url) = prev_urls.last()
                     {
                         if let Some(v) = redirect::make_referer(&next_url, previous_url) {
-                            redirect_headers.insert(REFERER, v);
+                            redirect_headers.insert(http::header::REFERER, v);
                         } else {
-                            redirect_headers.remove(REFERER);
+                            redirect_headers.remove(http::header::REFERER);
                         }
                     }
 
@@ -173,8 +173,13 @@ impl Client {
                         StatusCode::MOVED_PERMANENTLY
                         | StatusCode::FOUND
                         | StatusCode::SEE_OTHER => {
-                            method = Method::GET;
+                            if matches!(status, StatusCode::MOVED_PERMANENTLY | StatusCode::FOUND) {
+                                method = Method::GET;
+                            }
                             body_backup = Some(Body::empty());
+                            redirect_headers.remove(http::header::CONTENT_LENGTH);
+                            redirect_headers.remove(http::header::CONTENT_TYPE);
+                            redirect_headers.remove(http::header::TRANSFER_ENCODING);
                         }
                         StatusCode::TEMPORARY_REDIRECT | StatusCode::PERMANENT_REDIRECT => {
                             if body_backup.is_none() {
