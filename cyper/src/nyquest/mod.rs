@@ -31,7 +31,6 @@ mod blocking;
 /// ## Missing features
 /// * `caching_behavior`
 /// * `use_default_proxy`: error on use
-/// * `follow_redirects`: error on use
 pub struct CyperBackend;
 
 impl CyperBackend {
@@ -41,25 +40,21 @@ impl CyperBackend {
                 "cyper nyquest backend does not support use_default_proxy option",
             )));
         }
-        if options.follow_redirects {
-            return Err(NyquestError::Io(std::io::Error::other(
-                "cyper nyquest backend does not support follow_redirects option",
-            )));
-        }
-        let builder = crate::ClientBuilder::new().default_headers({
+        let mut builder = crate::ClientBuilder::new().default_headers({
             let mut headers = HeaderMap::new();
             for (k, v) in options.default_headers {
                 headers.insert(convert_header_name(k)?, convert_header_value(v)?);
             }
             headers
         });
+        if !options.follow_redirects {
+            builder = builder.redirect(crate::redirect::Policy::none())
+        }
+        if options.ignore_certificate_errors {
+            builder = builder.danger_accept_invalid_certs(true)
+        }
         #[cfg(feature = "cookies")]
         let builder = builder.cookie_store(options.use_cookies);
-        let builder = if options.ignore_certificate_errors {
-            builder.danger_accept_invalid_certs(true)
-        } else {
-            builder
-        };
         let client = builder.build();
         let base_url = if let Some(url) = options.base_url {
             Some(Url::parse(&url).map_err(|_| NyquestError::InvalidUrl)?)

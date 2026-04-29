@@ -4,13 +4,13 @@ use std::task::{Context, Poll};
 
 use cyper_core::{CompioExecutor, CompioTimer};
 use http::{HeaderValue, header::Entry};
-use hyper::{HeaderMap, Method, Uri};
+use hyper::{HeaderMap, Method, StatusCode, Uri};
 use url::Url;
 #[cfg(feature = "cookies")]
 use {compio::bytes::Bytes, cookie_store::CookieStore, std::sync::RwLock};
 
 use crate::{
-    Body, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend,
+    Body, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend, redirect,
     resolve::{ArcResolver, Resolve},
 };
 
@@ -66,6 +66,24 @@ impl Client {
         ))
     }
 
+    #[cfg(feature = "cookies")]
+    fn store_response_cookies(&self, url: &Url, res: &Response) {
+        if let Some(cookie_store) = &self.client.cookies {
+            let mut values = res
+                .headers()
+                .get_all(http::header::SET_COOKIE)
+                .into_iter()
+                .peekable();
+            if values.peek().is_some() {
+                let mut cookie_store = cookie_store.write().unwrap();
+                cookie_store.store_response_cookies(
+                    values.filter_map(|val| std::str::from_utf8(val.as_bytes()).ok()?.parse().ok()),
+                    url,
+                );
+            }
+        }
+    }
+
     async fn execute_impl(
         &self,
         mut request: http::Request<Body>,
@@ -89,8 +107,119 @@ impl Client {
 
         *request.headers_mut() = headers;
 
+        // Save state for potential redirects before request is consumed
+        let mut method = request.method().clone();
+        let version = request.version();
+        let mut body_backup = request.body().try_clone();
+        let mut redirect_headers = request.headers().clone();
+
+        let mut res = self.send_request(request, &url).await?;
+
+        // Redirect loop
+        let mut current_url = url;
+        let mut prev_urls: Vec<Url> = Vec::new();
+        let mut should_stop = false;
+
+        loop {
+            #[cfg(feature = "cookies")]
+            self.store_response_cookies(&current_url, &res);
+
+            let status = res.status();
+            if !status.is_redirection() || should_stop {
+                return Ok(res);
+            }
+
+            let Some(location) = res
+                .headers()
+                .get(http::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+            else {
+                return Ok(res);
+            };
+
+            let Ok(next_url) = current_url.join(location) else {
+                return Ok(res);
+            };
+
+            prev_urls.push(current_url);
+
+            let action = self
+                .client
+                .redirect_policy
+                .check(status, &next_url, &prev_urls);
+
+            current_url = next_url;
+
+            match action {
+                redirect::ActionKind::Follow => {
+                    redirect::remove_sensitive_headers(
+                        &mut redirect_headers,
+                        &current_url,
+                        &prev_urls,
+                    );
+
+                    if self.client.referer
+                        && let Some(previous_url) = prev_urls.last()
+                    {
+                        if let Some(v) = redirect::make_referer(&current_url, previous_url) {
+                            redirect_headers.insert(http::header::REFERER, v);
+                        } else {
+                            redirect_headers.remove(http::header::REFERER);
+                        }
+                    }
+
+                    match status {
+                        StatusCode::MOVED_PERMANENTLY
+                        | StatusCode::FOUND
+                        | StatusCode::SEE_OTHER => {
+                            if matches!(status, StatusCode::MOVED_PERMANENTLY | StatusCode::FOUND) {
+                                method = Method::GET;
+                            }
+                            body_backup = Some(Body::empty());
+                            redirect_headers.remove(http::header::CONTENT_LENGTH);
+                            redirect_headers.remove(http::header::CONTENT_TYPE);
+                            redirect_headers.remove(http::header::TRANSFER_ENCODING);
+                        }
+                        StatusCode::TEMPORARY_REDIRECT | StatusCode::PERMANENT_REDIRECT => {
+                            if body_backup.is_none() {
+                                return Ok(res);
+                            }
+                        }
+                        _ => return Ok(res),
+                    }
+
+                    let send_body = body_backup
+                        .as_ref()
+                        .and_then(|b| b.try_clone())
+                        .unwrap_or_default();
+
+                    let req = http::Request::builder()
+                        .method(method.clone())
+                        .uri(
+                            current_url
+                                .as_str()
+                                .parse::<Uri>()
+                                .expect("a parsed Url should always be a valid Uri"),
+                        )
+                        .version(version)
+                        .body(send_body)?;
+                    let mut req = req;
+                    *req.headers_mut() = redirect_headers.clone();
+
+                    res = self.send_request(req, &current_url).await?;
+                }
+                redirect::ActionKind::Stop => should_stop = true,
+                redirect::ActionKind::Error(e) => {
+                    return Err(crate::Error::Redirect(e));
+                }
+            }
+        }
+    }
+
+    #[allow(unused_mut)]
+    async fn send_request(&self, mut request: http::Request<Body>, url: &Url) -> Result<Response> {
         #[cfg(feature = "http3")]
-        let res = {
+        {
             #[cfg(feature = "http3-altsvc")]
             let host = url.host_str().expect("a parsed Url should have host");
 
@@ -108,7 +237,7 @@ impl Client {
             let res = if should_http3 {
                 self.h3_client.request(request, url.clone()).await?
             } else {
-                self.send_h1h2_request(request, &url).await?
+                self.send_h1h2_request(request, url).await?
             };
             #[cfg(feature = "http3-altsvc")]
             if let Some(alt_svc) = res.headers().get(http::header::ALT_SVC)
@@ -126,32 +255,12 @@ impl Client {
                     }
                 }
             }
-            res
-        };
-        #[cfg(not(feature = "http3"))]
-        let res = self.send_h1h2_request(request, &url).await?;
-
-        #[cfg(feature = "cookies")]
-        {
-            if let Some(cookie_store) = &self.client.cookies {
-                let mut values = res
-                    .headers()
-                    .get_all(http::header::SET_COOKIE)
-                    .into_iter()
-                    .peekable();
-                if values.peek().is_some() {
-                    let mut cookie_store = cookie_store.write().unwrap();
-                    cookie_store.store_response_cookies(
-                        values.filter_map(|val| {
-                            std::str::from_utf8(val.as_bytes()).ok()?.parse().ok()
-                        }),
-                        &url,
-                    );
-                }
-            }
+            Ok(res)
         }
-
-        Ok(res)
+        #[cfg(not(feature = "http3"))]
+        {
+            self.send_h1h2_request(request, url).await
+        }
     }
 
     async fn send_h1h2_request(&self, request: http::Request<Body>, url: &Url) -> Result<Response> {
@@ -224,6 +333,8 @@ impl Client {
 struct ClientInner {
     client: hyper_util::client::legacy::Client<Connector, Body>,
     headers: HeaderMap,
+    redirect_policy: redirect::Policy,
+    referer: bool,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
 }
@@ -236,6 +347,8 @@ pub struct ClientBuilder {
     tls: TlsBackend,
     headers: HeaderMap,
     resolver: Option<ArcResolver>,
+    redirect_policy: redirect::Policy,
+    referer: bool,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
 }
@@ -253,6 +366,8 @@ impl ClientBuilder {
             headers: HeaderMap::new(),
             tls: TlsBackend::default(),
             resolver: None,
+            redirect_policy: redirect::Policy::default(),
+            referer: true,
             #[cfg(feature = "cookies")]
             cookies: None,
         }
@@ -269,6 +384,8 @@ impl ClientBuilder {
         let client_ref = ClientInner {
             client,
             headers: self.headers,
+            redirect_policy: self.redirect_policy,
+            referer: self.referer,
             #[cfg(feature = "cookies")]
             cookies: self.cookies,
         };
@@ -313,6 +430,22 @@ impl ClientBuilder {
     /// Controls the use of certificate validation.
     pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
         self.tls = self.tls.with_accept_invalid_certs(accept);
+        self
+    }
+
+    /// Set the redirect policy.
+    ///
+    /// Default is `redirect::Policy::default()` which limits to 10 redirects.
+    pub fn redirect(mut self, policy: redirect::Policy) -> Self {
+        self.redirect_policy = policy;
+        self
+    }
+
+    /// Enable or disable setting a `Referer` header on redirects.
+    ///
+    /// Default is `true`.
+    pub fn referer(mut self, enable: bool) -> Self {
+        self.referer = enable;
         self
     }
 
