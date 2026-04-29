@@ -124,7 +124,7 @@ pub enum Error {
     QuicConnection(#[from] compio::quic::ConnectionError),
     /// Redirect error.
     #[error("redirect: {0}")]
-    Redirect(Box<dyn std::error::Error + Send + Sync>),
+    Redirect(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 /// The result type used in `cyper`.

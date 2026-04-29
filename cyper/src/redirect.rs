@@ -174,14 +174,14 @@ impl<'a> Attempt<'a> {
         self.previous
     }
 
-    /// Returns an action meaning reqwest should follow the next URL.
+    /// Returns an action meaning the next URL should be followed.
     pub fn follow(self) -> Action {
         Action {
             inner: ActionKind::Follow,
         }
     }
 
-    /// Returns an action meaning reqwest should not follow the next URL.
+    /// Returns an action meaning the next URL should not be followed.
     ///
     /// The 30x response will be returned as the `Ok` result.
     pub fn stop(self) -> Action {
