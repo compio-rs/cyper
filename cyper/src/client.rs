@@ -161,9 +161,12 @@ impl Client {
 
                     if self.client.referer
                         && let Some(previous_url) = prev_urls.last()
-                        && let Some(v) = redirect::make_referer(&next_url, previous_url)
                     {
-                        redirect_headers.insert(REFERER, v);
+                        if let Some(v) = redirect::make_referer(&next_url, previous_url) {
+                            redirect_headers.insert(REFERER, v);
+                        } else {
+                            redirect_headers.remove(REFERER);
+                        }
                     }
 
                     match status {
