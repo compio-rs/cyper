@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use compio::bytes::Bytes;
 #[cfg(feature = "cookies")]
 use cookie_store::RawCookie;
@@ -11,7 +13,6 @@ use url::Url;
 use crate::{ResponseBody, Result};
 
 /// A Response to a submitted `Request`.
-#[derive(Debug)]
 pub struct Response {
     pub(super) res: hyper::Response<()>,
     pub(crate) body: ResponseBody,
@@ -21,21 +22,15 @@ pub struct Response {
 impl Response {
     pub(super) fn new(res: hyper::Response<Incoming>, url: Url) -> Self {
         let (res, body) = res.into_parts();
-        let res = hyper::Response::from_parts(res, ());
-        Self {
-            res,
-            body: ResponseBody::Incoming(body),
-            url,
-        }
+        let mut res = hyper::Response::from_parts(res, ());
+        let body = ResponseBody::Incoming(body).decompress(res.headers_mut());
+        Self { res, body, url }
     }
 
     #[cfg(feature = "http3")]
-    pub(crate) fn with_body(res: hyper::Response<()>, body: Bytes, url: Url) -> Self {
-        Self {
-            res,
-            body: ResponseBody::Blob(body),
-            url,
-        }
+    pub(crate) fn with_body(mut res: hyper::Response<()>, body: Bytes, url: Url) -> Self {
+        let body = ResponseBody::Blob(Some(Ok(body))).decompress(res.headers_mut());
+        Self { res, body, url }
     }
 
     /// Get the `StatusCode` of this `Response`.
@@ -291,5 +286,14 @@ impl futures_util::Stream for Response {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         std::pin::Pin::new(&mut self.body).poll_next(cx)
+    }
+}
+
+impl Debug for Response {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Response")
+            .field("res", &self.res)
+            .field("url", &self.url)
+            .finish_non_exhaustive()
     }
 }

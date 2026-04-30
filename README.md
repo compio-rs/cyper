@@ -52,7 +52,7 @@ async fn main() {
   - [x] HTTP proxy tunnel
   - [x] Socks 4/5
 - [x] redirect
-- [ ] compression
+- [x] decompression
 
 ## Nyquest support
 `cyper` supports `nyquest` experimentally. Start with registering:

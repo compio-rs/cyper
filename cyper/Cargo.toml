@@ -33,6 +33,7 @@ rustls-platform-verifier = { workspace = true, optional = true }
 async-stream = "0.3"
 base64 = "0.22"
 cfg-if = { workspace = true }
+compression-codecs = { version = "0.4", optional = true }
 cookie_store = { version = "0.22", optional = true }
 encoding_rs = "0.8"
 futures-util = { workspace = true }
@@ -58,12 +59,15 @@ rustls = { workspace = true, features = ["ring"] }
 nyquest = "0.4.0"
 
 axum = { workspace = true }
+brotli_crate = { package = "brotli", version = "8" }
 clap = { version = "4", features = ["derive"] }
 cookie = "0.18"
+flate2 = "1"
 futures-channel = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 time = "0.3"
 tower = { workspace = true }
+zstd_crate = { package = "zstd", version = "0.13" }
 
 [build-dependencies]
 cfg_aliases = { workspace = true }
@@ -88,6 +92,12 @@ http3-altsvc = ["http3"]
 stream = []
 multipart = ["stream", "dep:mime_guess", "dep:percent-encoding"]
 socks = []
+__decompression = ["dep:compression-codecs"]
+brotli = ["__decompression", "compression-codecs/brotli"]
+deflate = ["__decompression", "compression-codecs/zlib"]
+gzip = ["__decompression", "compression-codecs/gzip"]
+zstd = ["__decompression", "compression-codecs/zstd"]
+decompression-all = ["brotli", "deflate", "gzip", "zstd"]
 all = [
     "cookies",
     "json",
@@ -99,6 +109,7 @@ all = [
     "stream",
     "multipart",
     "socks",
+    "decompression-all",
 ]
 
 nyquest = ["dep:nyquest-interface", "compio/sync", "compio/time"]
@@ -156,3 +167,19 @@ required-features = ["multipart"]
 [[test]]
 name = "nyquest"
 required-features = ["nyquest"]
+
+[[test]]
+name = "gzip"
+required-features = ["gzip", "stream"]
+
+[[test]]
+name = "deflate"
+required-features = ["deflate", "stream"]
+
+[[test]]
+name = "brotli"
+required-features = ["brotli", "stream"]
+
+[[test]]
+name = "zstd"
+required-features = ["zstd", "stream"]
