@@ -84,8 +84,7 @@ impl Decoder {
             while let Some(frame) = incoming.frame().await {
                 let frame = frame?;
                 if let Some(data) = frame.data_ref() {
-                    let decoded = self.decode_all(data)?;
-                    yield decoded;
+                    yield self.decode_all(data)?;
                 }
             }
         }

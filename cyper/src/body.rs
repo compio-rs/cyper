@@ -205,6 +205,7 @@ pub(crate) enum ResponseBody {
 impl ResponseBody {
     pub fn decompress(self, encoding: &str) -> Self {
         use crate::Decoder;
+        #[allow(unused_mut)]
         if let Some(mut decoder) = Decoder::new_by_name(encoding) {
             match self {
                 Self::Incoming(incoming) => {

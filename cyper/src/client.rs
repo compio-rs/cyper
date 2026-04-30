@@ -219,6 +219,7 @@ impl Client {
         let uri = request.uri().clone();
         self.proxy_auth(&uri, request.headers_mut());
         self.proxy_custom_headers(&uri, request.headers_mut());
+        self.accept_header(request.headers_mut());
 
         #[cfg(feature = "http3")]
         {
@@ -335,6 +336,17 @@ impl Client {
         }
     }
 
+    fn accept_header(&self, headers: &mut HeaderMap) {
+        if headers.contains_key(http::header::ACCEPT_ENCODING)
+            || headers.contains_key(http::header::RANGE)
+        {
+            return;
+        }
+        if let Some(value) = self.client.accepts.clone() {
+            headers.insert(http::header::ACCEPT_ENCODING, value);
+        }
+    }
+
     /// Send a request with method and url.
     pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> Result<RequestBuilder> {
         Ok(RequestBuilder::new(
@@ -385,6 +397,59 @@ struct ClientInner {
     proxies_maybe_http_custom_headers: bool,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
+    accepts: Option<HeaderValue>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Accepts {
+    #[cfg(feature = "gzip")]
+    gzip: bool,
+    #[cfg(feature = "brotli")]
+    brotli: bool,
+    #[cfg(feature = "zstd")]
+    zstd: bool,
+    #[cfg(feature = "deflate")]
+    deflate: bool,
+}
+
+impl Default for Accepts {
+    fn default() -> Accepts {
+        Accepts {
+            #[cfg(feature = "gzip")]
+            gzip: true,
+            #[cfg(feature = "brotli")]
+            brotli: true,
+            #[cfg(feature = "zstd")]
+            zstd: true,
+            #[cfg(feature = "deflate")]
+            deflate: true,
+        }
+    }
+}
+
+impl Accepts {
+    pub fn header_value(&self) -> Option<HeaderValue> {
+        #[allow(unused_mut)]
+        let mut encodings = Vec::<&'static str>::new();
+        #[cfg(feature = "gzip")]
+        if self.gzip {
+            encodings.push("gzip");
+        }
+        #[cfg(feature = "brotli")]
+        if self.brotli {
+            encodings.push("br");
+        }
+        #[cfg(feature = "zstd")]
+        if self.zstd {
+            encodings.push("zstd");
+        }
+        #[cfg(feature = "deflate")]
+        if self.deflate {
+            encodings.push("deflate");
+        }
+
+        encodings.join(", ").parse().ok()
+    }
 }
 
 /// A `ClientBuilder` can be used to create a `Client` with custom
@@ -392,6 +457,7 @@ struct ClientInner {
 #[derive(Debug)]
 #[must_use]
 pub struct ClientBuilder {
+    accepts: Accepts,
     tls: TlsBackend,
     headers: HeaderMap,
     resolver: Option<ArcResolver>,
@@ -413,6 +479,7 @@ impl ClientBuilder {
     /// Constructs a new `ClientBuilder`.
     pub fn new() -> Self {
         Self {
+            accepts: Accepts::default(),
             headers: HeaderMap::new(),
             tls: TlsBackend::default(),
             resolver: None,
@@ -458,6 +525,7 @@ impl ClientBuilder {
             proxies_maybe_http_custom_headers,
             #[cfg(feature = "cookies")]
             cookies: self.cookies,
+            accepts: self.accepts.header_value(),
         };
         Client {
             client: Arc::new(client_ref),
@@ -561,6 +629,159 @@ impl ClientBuilder {
     pub fn custom_resolver<R: Resolve + 'static>(mut self, resolver: R) -> Self {
         self.resolver = Some(ArcResolver::new(resolver));
         self
+    }
+
+    /// Enable auto gzip decompression by checking the `Content-Encoding`
+    /// response header.
+    ///
+    /// If auto gzip decompression is turned on:
+    ///
+    /// - When sending a request and if the request's headers do not already
+    ///   contain an `Accept-Encoding` **and** `Range` values, the
+    ///   `Accept-Encoding` header is set to `gzip`. The request body is **not**
+    ///   automatically compressed.
+    /// - When receiving a response, if its headers contain a `Content-Encoding`
+    ///   value of `gzip`, both `Content-Encoding` and `Content-Length` are
+    ///   removed from the headers' set. The response body is automatically
+    ///   decompressed.
+    ///
+    /// If the `gzip` feature is turned on, the default option is enabled.
+    #[cfg(feature = "gzip")]
+    pub fn gzip(mut self, enable: bool) -> Self {
+        self.accepts.gzip = enable;
+        self
+    }
+
+    /// Enable auto brotli decompression by checking the `Content-Encoding`
+    /// response header.
+    ///
+    /// If auto brotli decompression is turned on:
+    ///
+    /// - When sending a request and if the request's headers do not already
+    ///   contain an `Accept-Encoding` **and** `Range` values, the
+    ///   `Accept-Encoding` header is set to `br`. The request body is **not**
+    ///   automatically compressed.
+    /// - When receiving a response, if its headers contain a `Content-Encoding`
+    ///   value of `br`, both `Content-Encoding` and `Content-Length` are
+    ///   removed from the headers' set. The response body is automatically
+    ///   decompressed.
+    ///
+    /// If the `brotli` feature is turned on, the default option is enabled.
+    #[cfg(feature = "brotli")]
+    pub fn brotli(mut self, enable: bool) -> Self {
+        self.accepts.brotli = enable;
+        self
+    }
+
+    /// Enable auto zstd decompression by checking the `Content-Encoding`
+    /// response header.
+    ///
+    /// If auto zstd decompression is turned on:
+    ///
+    /// - When sending a request and if the request's headers do not already
+    ///   contain an `Accept-Encoding` **and** `Range` values, the
+    ///   `Accept-Encoding` header is set to `zstd`. The request body is **not**
+    ///   automatically compressed.
+    /// - When receiving a response, if its headers contain a `Content-Encoding`
+    ///   value of `zstd`, both `Content-Encoding` and `Content-Length` are
+    ///   removed from the headers' set. The response body is automatically
+    ///   decompressed.
+    ///
+    /// If the `zstd` feature is turned on, the default option is enabled.
+    #[cfg(feature = "zstd")]
+    pub fn zstd(mut self, enable: bool) -> Self {
+        self.accepts.zstd = enable;
+        self
+    }
+
+    /// Enable auto deflate decompression by checking the `Content-Encoding`
+    /// response header.
+    ///
+    /// If auto deflate decompression is turned on:
+    ///
+    /// - When sending a request and if the request's headers do not already
+    ///   contain an `Accept-Encoding` **and** `Range` values, the
+    ///   `Accept-Encoding` header is set to `deflate`. The request body is
+    ///   **not** automatically compressed.
+    /// - When receiving a response, if it's headers contain a
+    ///   `Content-Encoding` value that equals to `deflate`, both values
+    ///   `Content-Encoding` and `Content-Length` are removed from the headers'
+    ///   set. The response body is automatically decompressed.
+    ///
+    /// If the `deflate` feature is turned on, the default option is enabled.
+    #[cfg(feature = "deflate")]
+    pub fn deflate(mut self, enable: bool) -> Self {
+        self.accepts.deflate = enable;
+        self
+    }
+
+    /// Disable auto response body gzip decompression.
+    ///
+    /// This method exists even if the optional `gzip` feature is not enabled.
+    /// This can be used to ensure a `Client` doesn't use gzip decompression
+    /// even if another dependency were to enable the optional `gzip` feature.
+    pub fn no_gzip(self) -> Self {
+        #[cfg(feature = "gzip")]
+        {
+            self.gzip(false)
+        }
+
+        #[cfg(not(feature = "gzip"))]
+        {
+            self
+        }
+    }
+
+    /// Disable auto response body brotli decompression.
+    ///
+    /// This method exists even if the optional `brotli` feature is not enabled.
+    /// This can be used to ensure a `Client` doesn't use brotli decompression
+    /// even if another dependency were to enable the optional `brotli` feature.
+    pub fn no_brotli(self) -> Self {
+        #[cfg(feature = "brotli")]
+        {
+            self.brotli(false)
+        }
+
+        #[cfg(not(feature = "brotli"))]
+        {
+            self
+        }
+    }
+
+    /// Disable auto response body zstd decompression.
+    ///
+    /// This method exists even if the optional `zstd` feature is not enabled.
+    /// This can be used to ensure a `Client` doesn't use zstd decompression
+    /// even if another dependency were to enable the optional `zstd` feature.
+    pub fn no_zstd(self) -> Self {
+        #[cfg(feature = "zstd")]
+        {
+            self.zstd(false)
+        }
+
+        #[cfg(not(feature = "zstd"))]
+        {
+            self
+        }
+    }
+
+    /// Disable auto response body deflate decompression.
+    ///
+    /// This method exists even if the optional `deflate` feature is not
+    /// enabled. This can be used to ensure a `Client` doesn't use deflate
+    /// decompression even if another dependency were to enable the optional
+    /// `deflate` feature.
+    pub fn no_deflate(self) -> Self {
+        #[cfg(feature = "deflate")]
+        {
+            self.deflate(false)
+        }
+
+        #[cfg(not(feature = "deflate"))]
+        {
+            self
+        }
     }
 }
 
