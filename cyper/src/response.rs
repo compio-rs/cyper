@@ -22,14 +22,14 @@ pub struct Response {
 impl Response {
     pub(super) fn new(res: hyper::Response<Incoming>, url: Url) -> Self {
         let (res, body) = res.into_parts();
-        let res = hyper::Response::from_parts(res, ());
-        let body = decompress(ResponseBody::Incoming(body), res.headers());
+        let mut res = hyper::Response::from_parts(res, ());
+        let body = ResponseBody::Incoming(body).decompress(res.headers_mut());
         Self { res, body, url }
     }
 
     #[cfg(feature = "http3")]
-    pub(crate) fn with_body(res: hyper::Response<()>, body: Bytes, url: Url) -> Self {
-        let body = decompress(ResponseBody::Blob(Some(Ok(body))), res.headers());
+    pub(crate) fn with_body(mut res: hyper::Response<()>, body: Bytes, url: Url) -> Self {
+        let body = ResponseBody::Blob(Some(Ok(body))).decompress(res.headers_mut());
         Self { res, body, url }
     }
 
@@ -295,15 +295,5 @@ impl Debug for Response {
             .field("res", &self.res)
             .field("url", &self.url)
             .finish_non_exhaustive()
-    }
-}
-
-fn decompress(body: ResponseBody, headers: &HeaderMap) -> ResponseBody {
-    if let Some(encoding) = headers.get(http::header::CONTENT_ENCODING)
-        && let Ok(encoding) = encoding.to_str()
-    {
-        body.decompress(encoding)
-    } else {
-        body
     }
 }

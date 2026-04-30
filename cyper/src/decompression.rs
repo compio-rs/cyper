@@ -24,16 +24,16 @@ impl Decoder {
         }
     }
 
-    pub fn new_by_name(name: &str) -> Option<Self> {
+    pub fn new_by_name(name: &[u8]) -> Option<Self> {
         match name {
             #[cfg(feature = "gzip")]
-            "gzip" => Some(Self::new(compression_codecs::GzipDecoder::new())),
+            b"gzip" => Some(Self::new(compression_codecs::GzipDecoder::new())),
             #[cfg(feature = "deflate")]
-            "deflate" => Some(Self::new(compression_codecs::ZlibDecoder::new())),
+            b"deflate" => Some(Self::new(compression_codecs::ZlibDecoder::new())),
             #[cfg(feature = "brotli")]
-            "br" | "brotli" => Some(Self::new(compression_codecs::BrotliDecoder::new())),
+            b"br" => Some(Self::new(compression_codecs::BrotliDecoder::new())),
             #[cfg(feature = "zstd")]
-            "zstd" => Some(Self::new(compression_codecs::ZstdDecoder::new())),
+            b"zstd" => Some(Self::new(compression_codecs::ZstdDecoder::new())),
             _ => None,
         }
     }

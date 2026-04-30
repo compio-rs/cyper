@@ -7,6 +7,8 @@ use std::{
 use async_stream::try_stream;
 use compio::{BufResult, bytes::Bytes, fs::File, io::AsyncReadAt};
 use futures_util::{Stream, StreamExt};
+#[cfg(feature = "__decompression")]
+use http::HeaderMap;
 use hyper::body::{Frame, Incoming, SizeHint};
 use send_wrapper::SendWrapper;
 
@@ -203,20 +205,39 @@ pub(crate) enum ResponseBody {
 
 #[cfg(feature = "__decompression")]
 impl ResponseBody {
-    pub fn decompress(self, encoding: &str) -> Self {
+    pub fn decompress(self, headers: &mut HeaderMap) -> Self {
+        use http::header::Entry;
+
         use crate::Decoder;
+
         #[allow(unused_mut)]
-        if let Some(mut decoder) = Decoder::new_by_name(encoding) {
-            match self {
+        if let Entry::Occupied(encoding) = headers.entry(http::header::CONTENT_ENCODING)
+            && let Some(mut decoder) = Decoder::new_by_name(encoding.get().as_bytes())
+        {
+            let (update, len, new_body) = match self {
                 Self::Incoming(incoming) => {
-                    Self::Decompressed(Box::pin(decoder.decode_incoming(incoming)))
+                    let new_body = Self::Decompressed(Box::pin(decoder.decode_incoming(incoming)));
+                    (true, None, new_body)
                 }
                 #[cfg(feature = "http3")]
                 Self::Blob(Some(Ok(bytes))) => {
-                    Self::Blob(Some(decoder.decode_all(&bytes).map_err(|e| e.into())))
+                    let decoded = decoder.decode_all(&bytes);
+                    let len = decoded.as_ref().ok().map(|b| b.len());
+                    let new_body = Self::Blob(Some(decoded.map_err(|e| e.into())));
+                    (true, len, new_body)
                 }
-                _ => self,
+                _ => (false, None, self),
+            };
+
+            if update {
+                encoding.remove();
+                headers.remove(http::header::CONTENT_LENGTH);
+                if let Some(len) = len {
+                    headers.insert(http::header::CONTENT_LENGTH, len.into());
+                }
             }
+
+            new_body
         } else {
             self
         }
@@ -259,7 +280,8 @@ impl hyper::body::Body for ResponseBody {
                 }
             }
             #[cfg(feature = "__decompression")]
-            Self::Decompressed(b) => unsafe { Pin::new_unchecked(b) }
+            Self::Decompressed(b) => b
+                .as_mut()
                 .poll_next(cx)
                 .map(|b| b.map(|b| b.map(Frame::data))),
         }
