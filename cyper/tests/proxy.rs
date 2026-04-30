@@ -2,8 +2,6 @@
 
 mod server;
 
-use std::net::{Ipv4Addr, SocketAddr};
-
 use axum::extract::Request;
 use cyper::{
     Client,
@@ -158,90 +156,13 @@ async fn test_no_proxy() {
     assert_eq!(res.text().await.unwrap(), "OK");
 }
 
-// ===== Tunnel (CONNECT) Tests =====
-
-/// A mock proxy server that receives CONNECT requests and returns a
-/// configurable response. Runs on a raw TCP listener since CONNECT is
-/// not a regular HTTP request-response cycle for the server.
-struct TunnelMock {
-    addr: SocketAddr,
-    shutdown_tx: Option<futures_channel::oneshot::Sender<()>>,
-}
-
-impl Drop for TunnelMock {
-    fn drop(&mut self) {
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(());
-        }
-    }
-}
-
-impl TunnelMock {
-    fn addr(&self) -> SocketAddr {
-        self.addr
-    }
-}
-
-/// Start a mock CONNECT proxy server. The `handler` receives the raw
-/// request string (CONNECT line + headers) and should return the raw
-/// HTTP response string to send back.
-async fn tunnel_mock(handler: impl Fn(&str) -> String + Send + 'static) -> TunnelMock {
-    use compio::{
-        BufResult,
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::TcpListener,
-    };
-
-    let listener = TcpListener::bind(&(Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let (shutdown_tx, shutdown_rx) = futures_channel::oneshot::channel();
-
-    compio::runtime::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-
-        let mut buf = Vec::<u8>::with_capacity(4096);
-        loop {
-            let BufResult(res, b) = stream.append(buf).await;
-            let n = res.unwrap();
-            buf = b;
-            if buf.len() >= 4 && buf[buf.len() - 4..] == *b"\r\n\r\n" {
-                break;
-            }
-            if n == 0 {
-                return;
-            }
-        }
-
-        let request = std::str::from_utf8(&buf).unwrap();
-        let response = handler(request);
-
-        let BufResult(res, _) = stream.write_all(response).await;
-        res.unwrap();
-
-        // Keep the connection alive until shutdown
-        let _ = shutdown_rx.await;
-    })
-    .detach();
-
-    TunnelMock {
-        addr,
-        shutdown_tx: Some(shutdown_tx),
-    }
-}
-
 #[cfg(tls)]
 #[compio::test]
 async fn tunnel_detects_unsuccessful() {
-    let mock = tunnel_mock(move |request: &str| {
-        assert!(
-            request.starts_with("CONNECT"),
-            "Expected CONNECT, got: {request}"
-        );
-        assert!(
-            request.contains("cyper.local:443"),
-            "Expected target host:port in CONNECT, got: {request}"
-        );
-        "HTTP/1.1 400 Bad Request\r\n\r\n".to_string()
+    let mock = server::http(move |req: Request| async move {
+        assert_eq!(req.method(), http::Method::CONNECT);
+        assert_eq!(req.uri(), "cyper.local:443");
+        StatusCode::BAD_REQUEST
     })
     .await;
 
@@ -271,13 +192,17 @@ async fn tunnel_detects_unsuccessful() {
 #[cfg(tls)]
 #[compio::test]
 async fn tunnel_includes_proxy_auth() {
-    let mock = tunnel_mock(move |request: &str| {
-        assert!(request.starts_with("CONNECT"));
-        assert!(
-            request.contains("Proxy-Authorization: Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ=="),
-            "Expected proxy-authorization header, got: {request}"
+    let mock = server::http(move |req: Request| async move {
+        assert_eq!(req.method(), http::Method::CONNECT);
+        assert_eq!(
+            req.headers()
+                .get(http::header::PROXY_AUTHORIZATION)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
         );
-        "HTTP/1.1 400 Bad Request\r\n\r\n".to_string()
+        StatusCode::BAD_REQUEST
     })
     .await;
 
