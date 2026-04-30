@@ -337,6 +337,12 @@ impl Client {
     }
 
     fn accept_header(&self, headers: &mut HeaderMap) {
+        if !headers.contains_key(http::header::ACCEPT) {
+            headers.insert(
+                http::header::ACCEPT,
+                http::HeaderValue::from_static("*/*"),
+            );
+        }
         if headers.contains_key(http::header::ACCEPT_ENCODING)
             || headers.contains_key(http::header::RANGE)
         {

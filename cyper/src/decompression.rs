@@ -1,7 +1,7 @@
 use std::io;
 
 use async_stream::try_stream;
-use compio::{buf::SetLen, bytes::Bytes};
+use compio::bytes::Bytes;
 use compression_codecs::{
     DecodeV2,
     core::util::{PartialBuffer, WriteBuffer},
@@ -26,7 +26,7 @@ impl Decoder {
             #[cfg(feature = "gzip")]
             "gzip" => Some(Self::new(compression_codecs::GzipDecoder::new())),
             #[cfg(feature = "deflate")]
-            "deflate" => Some(Self::new(compression_codecs::DeflateDecoder::new())),
+            "deflate" => Some(Self::new(compression_codecs::ZlibDecoder::new())),
             #[cfg(feature = "brotli")]
             "br" | "brotli" => Some(Self::new(compression_codecs::BrotliDecoder::new())),
             #[cfg(feature = "zstd")]
@@ -36,30 +36,68 @@ impl Decoder {
     }
 
     fn decode_impl(&mut self, data: &[u8], buffer: &mut Vec<u8>) -> io::Result<usize> {
+        use compio::buf::SetLen;
+
+        // flate2 requires a window-sized output buffer (~32KB).
+        const MIN_SPARE: usize = 32768;
+
+        if data.is_empty() {
+            return Ok(0);
+        }
+
         let mut input = PartialBuffer::new(data);
-        let mut output = WriteBuffer::new_uninitialized(buffer.spare_capacity_mut());
-        let eof = self.inner.decode(&mut input, &mut output)?;
-        if eof {
-            loop {
-                if output.has_no_spare_space() {
-                    let len = output.written_len();
-                    buffer.reserve(4096);
-                    output = WriteBuffer::new_uninitialized(buffer.spare_capacity_mut());
-                    output.advance(len);
+        loop {
+            if buffer.spare_capacity_mut().len() < MIN_SPARE {
+                buffer.reserve(MIN_SPARE);
+            }
+            let result = {
+                let mut output = WriteBuffer::new_uninitialized(buffer.spare_capacity_mut());
+                self.inner
+                    .decode(&mut input, &mut output)
+                    .map(|eof| (eof, output.written_len()))
+            };
+            match result {
+                Ok((eof, output_written)) => {
+                    unsafe {
+                        buffer.advance(output_written);
+                    }
+                    if eof {
+                        loop {
+                            if buffer.spare_capacity_mut().len() < MIN_SPARE {
+                                buffer.reserve(MIN_SPARE);
+                            }
+                            let (flushed, written) = {
+                                let mut output =
+                                    WriteBuffer::new_uninitialized(buffer.spare_capacity_mut());
+                                let flushed = self.inner.finish(&mut output)?;
+                                (flushed, output.written_len())
+                            };
+                            unsafe {
+                                buffer.advance(written);
+                            }
+                            if flushed {
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                    if output_written == 0 {
+                        break;
+                    }
                 }
-                let flushed = self.inner.finish(&mut output)?;
-                if flushed {
+                Err(_) if input.written_len() >= data.len() => {
+                    // We've consumed all input but haven't produced output. This can happen
+                    // with some codecs when the input is incomplete. We'll wait for more data
+                    // to arrive before trying again.
                     break;
                 }
+                Err(e) => return Err(e),
             }
-        }
-        unsafe {
-            let output_written_len = output.written_len();
-            buffer.advance(output_written_len);
         }
         Ok(input.written_len())
     }
 
+    /// Decode a complete compressed payload.
     pub fn decode_all(&mut self, data: &[u8]) -> io::Result<Bytes> {
         let mut buffer = Vec::with_capacity(4096);
         let mut offset = 0;
@@ -84,7 +122,10 @@ impl Decoder {
             while let Some(frame) = incoming.frame().await {
                 let frame = frame?;
                 if let Some(data) = frame.data_ref() {
-                    yield self.decode_all(data)?;
+                    let bytes = self.decode_all(data)?;
+                    if !bytes.is_empty() {
+                        yield bytes;
+                    }
                 }
             }
         }
