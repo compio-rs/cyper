@@ -1,4 +1,4 @@
-use std::{io::Read, rc::Rc};
+use std::io::Read;
 
 #[cfg(feature = "nyquest-blocking-stream")]
 use compio::bytes::Bytes;
@@ -20,7 +20,7 @@ impl BlockingBackend for CyperBackend {
 
     fn create_blocking_client(&self, options: ClientOptions) -> Result<Self::BlockingClient> {
         let client = self.create_client(options)?;
-        let runtime = Rc::new(Runtime::new()?);
+        let runtime = Runtime::new()?;
         Ok(CyperBlockingClient {
             client,
             runtime: SendWrapper::new(runtime),
@@ -31,7 +31,7 @@ impl BlockingBackend for CyperBackend {
 #[derive(Clone)]
 pub struct CyperBlockingClient {
     client: CyperClient,
-    runtime: SendWrapper<Rc<Runtime>>,
+    runtime: SendWrapper<Runtime>,
 }
 
 impl BlockingClient for CyperBlockingClient {
@@ -119,7 +119,7 @@ impl Iterator for WrapBoxedStream {
 
 pub struct CyperBlockingResponse {
     resp: CyperResponse,
-    runtime: SendWrapper<Rc<Runtime>>,
+    runtime: SendWrapper<Runtime>,
 }
 
 impl Read for CyperBlockingResponse {
