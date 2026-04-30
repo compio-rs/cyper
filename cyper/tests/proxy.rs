@@ -133,7 +133,7 @@ async fn http_proxy_custom_auth_header() {
 #[compio::test]
 async fn test_no_proxy() {
     // Use the same server as both proxy and direct target.
-    // With no_proxy using "*", the request should bypass the proxy
+    // With no_proxy using the server address, the request should bypass the proxy
     // and go directly, resulting in origin-form URI ("/4") instead
     // of absolute-form.
     let server = server::http(move |req: Request| async move {
