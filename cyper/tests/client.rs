@@ -217,3 +217,26 @@ fn update_json_content_type_if_set_manually() {
 
     assert_eq!("application/json", req.headers().get(CONTENT_TYPE).unwrap());
 }
+
+#[compio::test]
+pub async fn accept_encoding_header_is_not_changed_if_set() {
+    let server = server::http(move |req: http::Request<axum::body::Body>| async move {
+        assert_eq!(req.headers()["accept"], "*/*");
+        assert_eq!(req.headers()["accept-encoding"], "identity");
+        http::Response::<axum::body::Body>::default()
+    })
+    .await;
+
+    let client = cyper::Client::new();
+
+    let res = client
+        .get(format!("http://{}/accept-encoding", server.addr()))
+        .unwrap()
+        .header("accept-encoding", "identity")
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), http::StatusCode::OK);
+}
