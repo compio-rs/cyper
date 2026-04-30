@@ -32,6 +32,11 @@ pub(crate) use connector::*;
 mod stream;
 pub(crate) use stream::*;
 
+#[cfg(feature = "__decompression")]
+mod decompression;
+#[cfg(feature = "__decompression")]
+pub(crate) use decompression::*;
+
 /// DNS resolution
 pub mod resolve;
 

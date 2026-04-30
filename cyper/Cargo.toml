@@ -33,6 +33,7 @@ rustls-platform-verifier = { workspace = true, optional = true }
 async-stream = "0.3"
 base64 = "0.22"
 cfg-if = { workspace = true }
+compression-codecs = { version = "0.4", optional = true }
 cookie_store = { version = "0.22", optional = true }
 encoding_rs = "0.8"
 futures-util = { workspace = true }
@@ -88,6 +89,12 @@ http3-altsvc = ["http3"]
 stream = []
 multipart = ["stream", "dep:mime_guess", "dep:percent-encoding"]
 socks = []
+__decompression = ["dep:compression-codecs"]
+brotli = ["__decompression", "compression-codecs/brotli"]
+deflate = ["__decompression", "compression-codecs/deflate"]
+gzip = ["__decompression", "compression-codecs/gzip"]
+zstd = ["__decompression", "compression-codecs/zstd"]
+decompression-all = ["brotli", "deflate", "gzip", "zstd"]
 all = [
     "cookies",
     "json",
@@ -99,6 +106,7 @@ all = [
     "stream",
     "multipart",
     "socks",
+    "decompression-all",
 ]
 
 nyquest = ["dep:nyquest-interface", "compio/sync", "compio/time"]
