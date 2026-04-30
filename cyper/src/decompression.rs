@@ -13,29 +13,13 @@ use hyper::body::Incoming;
 // flate2 requires a window-sized output buffer (~32KB).
 const MIN_SPARE: usize = 32768;
 
-pub struct Decoder {
-    inner: Box<dyn DecodeV2 + Send + Sync>,
+pub struct Decoder<D> {
+    inner: D,
 }
 
-impl Decoder {
-    pub fn new<D: DecodeV2 + Send + Sync + 'static>(decoder: D) -> Self {
-        Self {
-            inner: Box::new(decoder),
-        }
-    }
-
-    pub fn new_by_name(name: &[u8]) -> Option<Self> {
-        match name {
-            #[cfg(feature = "gzip")]
-            b"gzip" => Some(Self::new(compression_codecs::GzipDecoder::new())),
-            #[cfg(feature = "deflate")]
-            b"deflate" => Some(Self::new(compression_codecs::ZlibDecoder::new())),
-            #[cfg(feature = "brotli")]
-            b"br" => Some(Self::new(compression_codecs::BrotliDecoder::new())),
-            #[cfg(feature = "zstd")]
-            b"zstd" => Some(Self::new(compression_codecs::ZstdDecoder::new())),
-            _ => None,
-        }
+impl<D: DecodeV2> Decoder<D> {
+    pub fn new(decoder: D) -> Self {
+        Self { inner: decoder }
     }
 
     fn decode_impl(&mut self, data: &[u8], buffer: &mut Vec<u8>) -> io::Result<usize> {

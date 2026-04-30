@@ -7,9 +7,10 @@ use std::{
 use async_stream::try_stream;
 use compio::{BufResult, bytes::Bytes, fs::File, io::AsyncReadAt};
 use futures_util::{Stream, StreamExt};
-#[cfg(feature = "__decompression")]
-use http::HeaderMap;
-use hyper::body::{Frame, Incoming, SizeHint};
+use hyper::{
+    HeaderMap,
+    body::{Frame, Incoming, SizeHint},
+};
 use send_wrapper::SendWrapper;
 
 enum BodyInner {
@@ -205,27 +206,41 @@ pub(crate) enum ResponseBody {
 
 #[cfg(feature = "__decompression")]
 impl ResponseBody {
+    fn decode<D: compression_codecs::DecodeV2 + Send + Sync + 'static>(
+        self,
+        decoder: D,
+    ) -> (bool, Option<usize>, Self) {
+        let mut decoder = crate::Decoder::new(decoder);
+        match self {
+            Self::Incoming(incoming) => {
+                let new_body = Self::Decompressed(Box::pin(decoder.decode_incoming(incoming)));
+                (true, None, new_body)
+            }
+            #[cfg(feature = "http3")]
+            Self::Blob(Some(Ok(bytes))) => {
+                let decoded = decoder.decode_all(&bytes);
+                let len = decoded.as_ref().ok().map(|b| b.len());
+                let new_body = Self::Blob(Some(decoded.map_err(|e| e.into())));
+                (true, len, new_body)
+            }
+            _ => (false, None, self),
+        }
+    }
+
     pub fn decompress(self, headers: &mut HeaderMap) -> Self {
         use http::header::Entry;
 
-        use crate::Decoder;
-
         #[allow(unused_mut)]
-        if let Entry::Occupied(encoding) = headers.entry(http::header::CONTENT_ENCODING)
-            && let Some(mut decoder) = Decoder::new_by_name(encoding.get().as_bytes())
-        {
-            let (update, len, new_body) = match self {
-                Self::Incoming(incoming) => {
-                    let new_body = Self::Decompressed(Box::pin(decoder.decode_incoming(incoming)));
-                    (true, None, new_body)
-                }
-                #[cfg(feature = "http3")]
-                Self::Blob(Some(Ok(bytes))) => {
-                    let decoded = decoder.decode_all(&bytes);
-                    let len = decoded.as_ref().ok().map(|b| b.len());
-                    let new_body = Self::Blob(Some(decoded.map_err(|e| e.into())));
-                    (true, len, new_body)
-                }
+        if let Entry::Occupied(encoding) = headers.entry(http::header::CONTENT_ENCODING) {
+            let (update, len, new_body) = match encoding.get().as_bytes() {
+                #[cfg(feature = "gzip")]
+                b"gzip" => self.decode(compression_codecs::GzipDecoder::new()),
+                #[cfg(feature = "deflate")]
+                b"deflate" => self.decode(compression_codecs::ZlibDecoder::new()),
+                #[cfg(feature = "brotli")]
+                b"br" => self.decode(compression_codecs::BrotliDecoder::new()),
+                #[cfg(feature = "zstd")]
+                b"zstd" => self.decode(compression_codecs::ZstdDecoder::new()),
                 _ => (false, None, self),
             };
 
@@ -246,7 +261,7 @@ impl ResponseBody {
 
 #[cfg(not(feature = "__decompression"))]
 impl ResponseBody {
-    pub fn decompress(self, _encoding: &str) -> Self {
+    pub fn decompress(self, __headers: &mut HeaderMap) -> Self {
         self
     }
 }
