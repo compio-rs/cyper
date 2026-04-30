@@ -92,6 +92,9 @@ async fn connect_via_proxy(
             if let Some(auth) = intercepted.basic_auth() {
                 tunnel = tunnel.with_auth(auth.clone());
             }
+            if let Some(headers) = intercepted.custom_headers() {
+                tunnel = tunnel.with_headers(headers.clone());
+            }
             let tunneled = tunnel
                 .call(dst.clone())
                 .await
