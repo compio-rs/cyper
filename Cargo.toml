@@ -15,6 +15,7 @@ cyper-core = { path = "./cyper-core", default-features = false, version = "0.9.0
 cyper-axum = { path = "./cyper-axum", default-features = false, version = "0.9.0-rc.1" }
 socket2 = "0.6"
 
+cfg_aliases = "0.2.1"
 cfg-if = "1.0.0"
 futures-channel = "0.3.29"
 futures-util = "0.3.30"

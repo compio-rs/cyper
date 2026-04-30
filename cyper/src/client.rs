@@ -10,7 +10,8 @@ use url::Url;
 use {compio::bytes::Bytes, cookie_store::CookieStore, std::sync::RwLock};
 
 use crate::{
-    Body, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend, redirect,
+    Body, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend, proxy,
+    redirect,
     resolve::{ArcResolver, Resolve},
 };
 
@@ -215,6 +216,10 @@ impl Client {
 
     #[allow(unused_mut)]
     async fn send_request(&self, mut request: http::Request<Body>, url: &Url) -> Result<Response> {
+        let uri = request.uri().clone();
+        self.proxy_auth(&uri, request.headers_mut());
+        self.proxy_custom_headers(&uri, request.headers_mut());
+
         #[cfg(feature = "http3")]
         {
             #[cfg(feature = "http3-altsvc")]
@@ -287,6 +292,49 @@ impl Client {
         }
     }
 
+    fn proxy_auth(&self, dst: &Uri, headers: &mut HeaderMap) {
+        if !self.client.proxies_maybe_http_auth {
+            return;
+        }
+
+        // Only set the header here if the destination scheme is 'http',
+        // since otherwise, the header will be included in the CONNECT tunnel
+        // request instead.
+        if dst.scheme() != Some(&http::uri::Scheme::HTTP) {
+            return;
+        }
+
+        if headers.contains_key(http::header::PROXY_AUTHORIZATION) {
+            return;
+        }
+
+        for proxy in self.client.proxies.iter() {
+            if let Some(header) = proxy.http_non_tunnel_basic_auth(dst) {
+                headers.insert(http::header::PROXY_AUTHORIZATION, header);
+                break;
+            }
+        }
+    }
+
+    fn proxy_custom_headers(&self, dst: &Uri, headers: &mut HeaderMap) {
+        if !self.client.proxies_maybe_http_custom_headers {
+            return;
+        }
+
+        if dst.scheme() != Some(&http::uri::Scheme::HTTP) {
+            return;
+        }
+
+        for proxy in self.client.proxies.iter() {
+            if let Some(iter) = proxy.http_non_tunnel_custom_headers(dst) {
+                iter.iter().for_each(|(key, value)| {
+                    headers.insert(key, value.clone());
+                });
+                break;
+            }
+        }
+    }
+
     /// Send a request with method and url.
     pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> Result<RequestBuilder> {
         Ok(RequestBuilder::new(
@@ -332,6 +380,9 @@ struct ClientInner {
     headers: HeaderMap,
     redirect_policy: redirect::Policy,
     referer: bool,
+    proxies: Arc<Vec<proxy::Matcher>>,
+    proxies_maybe_http_auth: bool,
+    proxies_maybe_http_custom_headers: bool,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
 }
@@ -346,6 +397,8 @@ pub struct ClientBuilder {
     resolver: Option<ArcResolver>,
     redirect_policy: redirect::Policy,
     referer: bool,
+    proxies: Vec<proxy::Proxy>,
+    no_proxy: bool,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
 }
@@ -365,6 +418,8 @@ impl ClientBuilder {
             resolver: None,
             redirect_policy: redirect::Policy::default(),
             referer: true,
+            proxies: Vec::new(),
+            no_proxy: false,
             #[cfg(feature = "cookies")]
             cookies: None,
         }
@@ -374,15 +429,33 @@ impl ClientBuilder {
     pub fn build(self) -> Client {
         #[allow(unused)]
         let accept_invalid_certs = self.tls.accept_invalid_certs();
+        let proxies = if self.no_proxy {
+            Arc::new(vec![])
+        } else if !self.proxies.is_empty() {
+            Arc::new(self.proxies.into_iter().map(|p| p.into_matcher()).collect())
+        } else {
+            Arc::new(vec![proxy::Matcher::system()])
+        };
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
             .timer(CompioTimer)
-            .build(Connector::new(self.tls, self.resolver.clone()));
+            .build(Connector::new(
+                self.tls,
+                self.resolver.clone(),
+                proxies.clone(),
+            ));
+
+        let proxies_maybe_http_auth = proxies.iter().any(|p| p.maybe_has_http_auth());
+        let proxies_maybe_http_custom_headers =
+            proxies.iter().any(|p| p.maybe_has_http_custom_headers());
         let client_ref = ClientInner {
             client,
             headers: self.headers,
             redirect_policy: self.redirect_policy,
             referer: self.referer,
+            proxies,
+            proxies_maybe_http_auth,
+            proxies_maybe_http_custom_headers,
             #[cfg(feature = "cookies")]
             cookies: self.cookies,
         };
@@ -459,6 +532,28 @@ impl ClientBuilder {
         } else {
             self.cookies = None;
         }
+        self
+    }
+
+    /// Add a `Proxy` to the list of proxies the `Client` will use.
+    ///
+    /// # Note
+    ///
+    /// Adding a proxy will disable the automatic usage of the "system" proxy.
+    pub fn proxy(mut self, proxy: proxy::Proxy) -> Self {
+        self.proxies.push(proxy);
+        self
+    }
+
+    /// Clear all `Proxies`, so `Client` will use no proxy anymore.
+    ///
+    /// # Note
+    /// To add a proxy exclusion list, use [crate::proxy::Proxy::no_proxy()]
+    /// on all desired proxies instead.
+    ///
+    /// This also disables the automatic usage of the "system" proxy.
+    pub fn no_proxy(mut self) -> Self {
+        self.no_proxy = true;
         self
     }
 
