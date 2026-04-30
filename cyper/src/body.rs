@@ -210,6 +210,7 @@ impl ResponseBody {
         self,
         decoder: D,
     ) -> (bool, Option<usize>, Self) {
+        #[allow(unused_mut)]
         let mut decoder = crate::Decoder::new(decoder);
         match self {
             Self::Incoming(incoming) => {
@@ -230,7 +231,6 @@ impl ResponseBody {
     pub fn decompress(self, headers: &mut HeaderMap) -> Self {
         use http::header::Entry;
 
-        #[allow(unused_mut)]
         if let Entry::Occupied(encoding) = headers.entry(http::header::CONTENT_ENCODING) {
             let (update, len, new_body) = match encoding.get().as_bytes() {
                 #[cfg(feature = "gzip")]
