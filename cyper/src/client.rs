@@ -537,15 +537,21 @@ impl ClientBuilder {
 
     /// Add a `Proxy` to the list of proxies the `Client` will use.
     ///
-    /// Proxies are tried in the order they are added.
+    /// # Note
+    ///
+    /// Adding a proxy will disable the automatic usage of the "system" proxy.
     pub fn proxy(mut self, proxy: proxy::Proxy) -> Self {
         self.proxies.push(proxy);
         self
     }
 
-    /// Add a `NoProxy` exclusion list to the `Client`.
+    /// Clear all `Proxies`, so `Client` will use no proxy anymore.
     ///
-    /// The `NoProxy` rules will be applied to all proxies added to this client.
+    /// # Note
+    /// To add a proxy exclusion list, use [crate::proxy::Proxy::no_proxy()]
+    /// on all desired proxies instead.
+    ///
+    /// This also disables the automatic usage of the "system" proxy.
     pub fn no_proxy(mut self) -> Self {
         self.no_proxy = true;
         self
