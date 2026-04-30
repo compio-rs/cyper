@@ -43,13 +43,16 @@ async fn main() {
   - [x] rustls
 - [x] HTTP 2
 - [x] HTTP 3 - powered by compio-quic
+  - [x] Alt-Svc
 - [x] cookies
 - [x] charset
 - [x] serde-json
 - [x] multipart
+- [x] proxy
+  - [x] HTTP proxy tunnel
+  - [x] Socks 4/5
+- [x] redirect
 - [ ] compression
-  - [ ] gzip
-  - [ ] brotli
 
 ## Nyquest support
 `cyper` supports `nyquest` experimentally. Start with registering:
