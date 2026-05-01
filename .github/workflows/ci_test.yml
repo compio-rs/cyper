@@ -24,9 +24,14 @@ jobs:
         setup:
           - os: "ubuntu-22.04"
           - os: "ubuntu-22.04"
+            features: "nyquest-all"
+          - os: "ubuntu-22.04"
             no_default_features: true
           - os: "windows-latest"
             target: "x86_64-pc-windows-msvc"
+          - os: "windows-latest"
+            target: "x86_64-pc-windows-msvc"
+            features: "nyquest-all"
           - os: "windows-latest"
             target: "x86_64-pc-windows-gnu"
           - os: "windows-latest"
@@ -42,6 +47,8 @@ jobs:
             no_default_features: true
           - os: "macos-14"
           - os: "macos-15"
+          - os: "macos-15"
+            features: "nyquest-all"
           - os: "macos-14"
             no_default_features: true
           - os: "macos-15"
@@ -58,7 +65,7 @@ jobs:
         run: |
           set -ex
 
-          ARGS=("--features" "all" "--features" "nyquest-all")
+          ARGS=("--features" "all")
 
           # Add feature "nightly" if toolchain is nightly
           if [[ "${{ matrix.toolchain }}" == "nightly" ]]; then

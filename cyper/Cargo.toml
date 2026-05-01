@@ -115,7 +115,7 @@ all = [
 
 sync = ["compio/sync"]
 
-nyquest = ["dep:nyquest-interface", "compio/sync", "compio/time"]
+nyquest = ["dep:nyquest-interface", "sync", "compio/time"]
 nyquest-async = [
     "nyquest",
     "stream",
