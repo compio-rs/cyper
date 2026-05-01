@@ -3,11 +3,11 @@ mod server;
 #[cfg(feature = "json")]
 use std::collections::HashMap;
 
-use cyper::{Client, Request};
+use cyper::Client;
 use http::Method;
 #[cfg(feature = "json")]
 use http::header::CONTENT_TYPE;
-use hyper::service::Service;
+use tower_service::Service;
 
 #[compio::test]
 async fn response_text() {
@@ -120,19 +120,31 @@ async fn response_json() {
 }
 
 #[compio::test]
+#[cfg(feature = "stream")]
 async fn service() {
+    use http_body_util::BodyExt;
+
     let server = server::http(move |_req| async { "Hello" }).await;
 
-    let client = Client::new();
+    let mut client = Client::new();
 
-    let request = Request::new(
-        Method::GET,
-        format!("http://{}/text", server.addr()).parse().unwrap(),
-    );
+    let request = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("http://{}/text", server.addr()))
+        .body(cyper::Body::empty())
+        .unwrap();
 
     let res = client.call(request).await.expect("Failed to get");
-    assert_eq!(res.content_length(), Some(5));
-    let text = res.text().await.expect("Failed to get text");
+    let content_length = res
+        .headers()
+        .get(http::header::CONTENT_LENGTH)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse::<usize>()
+        .unwrap();
+    assert_eq!(content_length, 5);
+    let text = res.into_body().collect().await.unwrap().to_bytes();
     assert_eq!("Hello", text);
 }
 

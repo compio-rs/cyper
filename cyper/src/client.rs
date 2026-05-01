@@ -788,25 +788,12 @@ impl ClientBuilder {
     }
 }
 
-#[cfg(feature = "impl_trait_in_assoc_type")]
-impl hyper::service::Service<Request> for Client {
-    type Error = crate::Error;
-    type Response = Response;
-
-    type Future = impl Future<Output = Result<Response>>;
-
-    fn call(&self, req: Request) -> Self::Future {
-        let client = self.clone();
-        async move { client.execute(req).await }
-    }
-}
-
 #[cfg(all(feature = "impl_trait_in_assoc_type", feature = "stream"))]
-impl tower_service::Service<http::Request<Body>> for Client {
+impl tower_service::Service<http::Request<Body>> for &Client {
     type Error = crate::Error;
     type Response = http::Response<Body>;
 
-    type Future = impl Future<Output = Result<http::Response<Body>>>;
+    type Future = impl Future<Output = Result<http::Response<Body>>> + use<>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<()>> {
         Poll::Ready(Ok(()))
@@ -818,20 +805,8 @@ impl tower_service::Service<http::Request<Body>> for Client {
     }
 }
 
-#[cfg(not(feature = "impl_trait_in_assoc_type"))]
-impl hyper::service::Service<Request> for Client {
-    type Error = crate::Error;
-    type Future = std::pin::Pin<Box<dyn Future<Output = Result<Response>>>>;
-    type Response = Response;
-
-    fn call(&self, req: Request) -> Self::Future {
-        let client = self.clone();
-        Box::pin(async move { client.execute(req).await })
-    }
-}
-
 #[cfg(all(not(feature = "impl_trait_in_assoc_type"), feature = "stream"))]
-impl tower_service::Service<http::Request<Body>> for Client {
+impl tower_service::Service<http::Request<Body>> for &Client {
     type Error = crate::Error;
     type Future = std::pin::Pin<Box<dyn Future<Output = Result<http::Response<Body>>>>>;
     type Response = http::Response<Body>;
@@ -843,5 +818,20 @@ impl tower_service::Service<http::Request<Body>> for Client {
     fn call(&mut self, req: http::Request<Body>) -> Self::Future {
         let client = self.clone();
         Box::pin(async move { client.execute_tower(req).await })
+    }
+}
+
+#[cfg(feature = "stream")]
+impl tower_service::Service<http::Request<Body>> for Client {
+    type Error = crate::Error;
+    type Future = <&'static Client as tower_service::Service<http::Request<Body>>>::Future;
+    type Response = http::Response<Body>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: http::Request<Body>) -> Self::Future {
+        (&*self).call(req)
     }
 }
