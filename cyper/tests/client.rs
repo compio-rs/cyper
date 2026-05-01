@@ -4,10 +4,8 @@ mod server;
 use std::collections::HashMap;
 
 use cyper::Client;
-use http::Method;
 #[cfg(feature = "json")]
 use http::header::CONTENT_TYPE;
-use tower_service::Service;
 
 #[compio::test]
 async fn response_text() {
@@ -122,7 +120,9 @@ async fn response_json() {
 #[compio::test]
 #[cfg(feature = "stream")]
 async fn service() {
+    use http::Method;
     use http_body_util::BodyExt;
+    use tower_service::Service;
 
     let server = server::http(move |_req| async { "Hello" }).await;
 

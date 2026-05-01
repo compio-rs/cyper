@@ -1,8 +1,10 @@
-use std::{fmt::Debug, net::IpAddr, sync::Arc};
+use std::{fmt::Debug, net::IpAddr};
 
 use futures_util::{FutureExt, Stream, StreamExt, future::LocalBoxFuture, stream::LocalBoxStream};
 use http::Uri;
 use send_wrapper::SendWrapper;
+
+use crate::sync::shared::Shared;
 
 #[allow(async_fn_in_trait)]
 /// Trait for customizing DNS resolution in cyper.
@@ -16,11 +18,11 @@ pub trait Resolve {
 }
 
 #[derive(Clone)]
-pub(crate) struct ArcResolver(SendWrapper<Arc<dyn TypeErasedResolve>>);
+pub(crate) struct SharedResolver(SendWrapper<Shared<dyn TypeErasedResolve>>);
 
-impl ArcResolver {
+impl SharedResolver {
     pub(crate) fn new<R: Resolve + 'static>(resolver: R) -> Self {
-        Self(SendWrapper::new(Arc::new(resolver)))
+        Self(SendWrapper::new(Shared::new(resolver)))
     }
 
     pub(crate) async fn resolve<'a>(
@@ -31,9 +33,9 @@ impl ArcResolver {
     }
 }
 
-impl Debug for ArcResolver {
+impl Debug for SharedResolver {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_tuple("ArcResolver").finish()
+        f.debug_tuple("SharedResolver").finish()
     }
 }
 

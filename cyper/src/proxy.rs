@@ -14,13 +14,13 @@
 //! # }
 //! ```
 
-use std::{fmt, sync::Arc};
+use std::fmt;
 
 use http::{HeaderMap, Uri, header::HeaderValue, uri::Scheme};
 use hyper_util::client::proxy::matcher;
 use url::Url;
 
-use crate::into_url::IntoUrl;
+use crate::{into_url::IntoUrl, sync::shared::Shared};
 
 /// Configuration of a proxy that a `Client` should pass requests to.
 ///
@@ -140,7 +140,7 @@ impl Proxy {
         F: Fn(&Url) -> Option<U> + Send + Sync + 'static,
     {
         Proxy::new(Intercept::Custom(Custom {
-            func: Arc::new(move |url| fun(url).map(IntoProxy::into_proxy)),
+            func: Shared::new(move |url| fun(url).map(IntoProxy::into_proxy)),
             no_proxy: None,
         }))
     }
@@ -453,7 +453,7 @@ fn url_auth(url: &mut Url, username: &str, password: &str) {
 #[derive(Clone)]
 struct Custom {
     #[allow(clippy::type_complexity)]
-    func: Arc<dyn Fn(&Url) -> Option<crate::Result<Url>> + Send + Sync + 'static>,
+    func: Shared<dyn Fn(&Url) -> Option<crate::Result<Url>> + Send + Sync + 'static>,
     no_proxy: Option<NoProxy>,
 }
 

@@ -1,7 +1,6 @@
 use std::{
     future::Future,
     pin::Pin,
-    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -12,7 +11,8 @@ use tower_service::Service;
 use crate::{
     HttpStream, TlsBackend, WrappedHttpStream,
     proxy::{self, Intercepted},
-    resolve::ArcResolver,
+    resolve::SharedResolver,
+    sync::shared::Shared,
 };
 
 /// An HTTP connector service.
@@ -22,19 +22,19 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Connector {
     inner: HttpsConnector,
-    proxies: Arc<Vec<proxy::Matcher>>,
+    proxies: SendWrapper<Shared<Vec<proxy::Matcher>>>,
 }
 
 impl Connector {
     /// Creates the connector with specific TLS backend.
     pub fn new(
         tls: TlsBackend,
-        resolver: Option<ArcResolver>,
-        proxies: Arc<Vec<proxy::Matcher>>,
+        resolver: Option<SharedResolver>,
+        proxies: Shared<Vec<proxy::Matcher>>,
     ) -> Self {
         Self {
             inner: HttpsConnector::new(tls, resolver),
-            proxies,
+            proxies: SendWrapper::new(proxies),
         }
     }
 }
@@ -114,11 +114,11 @@ async fn connect_via_proxy(
 #[derive(Debug, Clone)]
 struct HttpsConnector {
     tls: TlsBackend,
-    resolver: Option<ArcResolver>,
+    resolver: Option<SharedResolver>,
 }
 
 impl HttpsConnector {
-    pub fn new(tls: TlsBackend, resolver: Option<ArcResolver>) -> Self {
+    pub fn new(tls: TlsBackend, resolver: Option<SharedResolver>) -> Self {
         Self { tls, resolver }
     }
 }

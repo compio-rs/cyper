@@ -1,4 +1,3 @@
-use std::sync::Arc;
 #[cfg(feature = "stream")]
 use std::task::{Context, Poll};
 
@@ -12,13 +11,14 @@ use {compio::bytes::Bytes, cookie_store::CookieStore, std::sync::RwLock};
 use crate::{
     Body, Connector, IntoUrl, Request, RequestBuilder, Response, Result, TlsBackend, proxy,
     redirect,
-    resolve::{ArcResolver, Resolve},
+    resolve::{Resolve, SharedResolver},
+    sync::shared::Shared,
 };
 
 /// An asynchronous `Client` to make Requests with.
 #[derive(Debug, Clone)]
 pub struct Client {
-    client: Arc<ClientInner>,
+    client: Shared<ClientInner>,
     #[cfg(feature = "http3")]
     h3_client: crate::http3::Client,
     #[cfg(feature = "http3-altsvc")]
@@ -395,7 +395,7 @@ struct ClientInner {
     headers: HeaderMap,
     redirect_policy: redirect::Policy,
     referer: bool,
-    proxies: Arc<Vec<proxy::Matcher>>,
+    proxies: Shared<Vec<proxy::Matcher>>,
     proxies_maybe_http_auth: bool,
     proxies_maybe_http_custom_headers: bool,
     #[cfg(feature = "cookies")]
@@ -463,7 +463,7 @@ pub struct ClientBuilder {
     accepts: Accepts,
     tls: TlsBackend,
     headers: HeaderMap,
-    resolver: Option<ArcResolver>,
+    resolver: Option<SharedResolver>,
     redirect_policy: redirect::Policy,
     referer: bool,
     proxies: Vec<proxy::Proxy>,
@@ -500,11 +500,11 @@ impl ClientBuilder {
         #[allow(unused)]
         let accept_invalid_certs = self.tls.accept_invalid_certs();
         let proxies = if self.no_proxy {
-            Arc::new(vec![])
+            Shared::new(vec![])
         } else if !self.proxies.is_empty() {
-            Arc::new(self.proxies.into_iter().map(|p| p.into_matcher()).collect())
+            Shared::new(self.proxies.into_iter().map(|p| p.into_matcher()).collect())
         } else {
-            Arc::new(vec![proxy::Matcher::system()])
+            Shared::new(vec![proxy::Matcher::system()])
         };
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
@@ -531,7 +531,7 @@ impl ClientBuilder {
             accepts: self.accepts.header_value(),
         };
         Client {
-            client: Arc::new(client_ref),
+            client: Shared::new(client_ref),
             #[cfg(feature = "http3")]
             h3_client: crate::http3::Client::new(accept_invalid_certs, self.resolver),
             #[cfg(feature = "http3-altsvc")]
@@ -630,7 +630,7 @@ impl ClientBuilder {
 
     /// Set the custom resolver for DNS resolution.
     pub fn custom_resolver<R: Resolve + 'static>(mut self, resolver: R) -> Self {
-        self.resolver = Some(ArcResolver::new(resolver));
+        self.resolver = Some(SharedResolver::new(resolver));
         self
     }
 

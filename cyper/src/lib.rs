@@ -60,6 +60,14 @@ pub mod multipart;
 #[cfg(feature = "nyquest")]
 pub mod nyquest;
 
+cfg_if::cfg_if! {
+    if #[cfg(feature = "sync")] {
+        use synchrony::sync;
+    } else {
+        use synchrony::unsync as sync;
+    }
+}
+
 /// The error type used in `cyper`.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

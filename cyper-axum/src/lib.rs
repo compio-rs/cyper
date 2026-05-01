@@ -16,7 +16,7 @@ use std::{
     marker::PhantomData,
     net::SocketAddr,
     pin::Pin,
-    sync::Arc,
+    rc::Rc,
     task::{Context, Poll},
     time::Duration,
 };
@@ -394,7 +394,7 @@ where
         } = self;
 
         let (signal_tx, signal_rx) = watch::channel(());
-        let signal_tx = Arc::new(signal_tx);
+        let signal_tx = Rc::new(signal_tx);
         compio::runtime::spawn(async move {
             signal.await;
             trace!("received graceful shutdown signal. Telling tasks to shutdown");
@@ -435,7 +435,7 @@ where
 
                 let hyper_service = TowerToHyperService::new(tower_service);
 
-                let signal_tx = Arc::clone(&signal_tx);
+                let signal_tx = Rc::clone(&signal_tx);
 
                 let close_rx = close_rx.clone();
 

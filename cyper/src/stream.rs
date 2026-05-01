@@ -16,7 +16,7 @@ use futures_util::StreamExt;
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
 
-use crate::{Error, Result, TlsBackend, resolve::ArcResolver};
+use crate::{Error, Result, TlsBackend, resolve::SharedResolver};
 
 /// A HTTP stream wrapper, based on compio, and exposes [`hyper::rt`]
 /// interfaces.
@@ -34,7 +34,7 @@ impl HttpStream {
     pub async fn connect(
         uri: Uri,
         tls: TlsBackend,
-        resolver: Option<ArcResolver>,
+        resolver: Option<SharedResolver>,
         is_proxy: bool,
     ) -> Result<Self> {
         let scheme = uri.scheme_str().unwrap_or("http");
@@ -77,7 +77,7 @@ impl HttpStream {
         uri: &Uri,
         host: &str,
         port: u16,
-        resolver: Option<ArcResolver>,
+        resolver: Option<SharedResolver>,
     ) -> Result<TcpStream> {
         let stream = match resolver {
             None => TcpStream::connect((host, port)).await?,

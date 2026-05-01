@@ -47,6 +47,7 @@ serde = "1"
 serde_json = { version = "1", optional = true }
 serde_urlencoded = "0.7"
 socket2 = { workspace = true, optional = true }
+synchrony = "0.1"
 thiserror = "2"
 tower-service = { workspace = true }
 url = "2"
@@ -111,6 +112,8 @@ all = [
     "socks",
     "decompression-all",
 ]
+
+sync = ["compio/sync"]
 
 nyquest = ["dep:nyquest-interface", "compio/sync", "compio/time"]
 nyquest-async = [

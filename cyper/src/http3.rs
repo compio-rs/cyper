@@ -1,13 +1,8 @@
-#[cfg(feature = "once_cell_try")]
-use std::sync::OnceLock;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
-    sync::{
-        Arc, Mutex,
-        mpsc::{Receiver, TryRecvError},
-    },
+    sync::mpsc::{Receiver, TryRecvError},
     time::Instant,
 };
 
@@ -28,12 +23,38 @@ use http::{
 };
 use http_body_util::BodyDataStream;
 use hyper::body::Buf;
-#[cfg(not(feature = "once_cell_try"))]
-use once_cell::sync::OnceCell as OnceLock;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use url::Url;
 
-use crate::{Body, Error, Response, Result, resolve::ArcResolver};
+use crate::{
+    Body, Error, Response, Result,
+    resolve::SharedResolver,
+    sync::{mutex_blocking::Mutex, shared::Shared},
+};
+
+mod sync {
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "sync")] {
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "once_cell_try")] {
+                    pub(crate) use std::sync::OnceLock;
+                } else {
+                    pub(crate) use once_cell::sync::OnceCell as OnceLock;
+                }
+            }
+        } else {
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "once_cell_try")] {
+                    pub(crate) use std::cell::OnceCell as OnceLock;
+                } else {
+                    pub(crate) use once_cell::unsync::OnceCell as OnceLock;
+                }
+            }
+        }
+    }
+}
+
+use sync::OnceLock;
 
 #[derive(Debug)]
 struct DualEndpoint {
@@ -116,15 +137,15 @@ impl DualEndpoint {
 
 #[derive(Debug, Clone)]
 struct Connector {
-    endpoint: Arc<OnceLock<DualEndpoint>>,
+    endpoint: Shared<OnceLock<DualEndpoint>>,
     accept_invalid_certs: bool,
-    resolver: Option<ArcResolver>,
+    resolver: Option<SharedResolver>,
 }
 
 impl Connector {
-    pub fn new(accept_invalid_certs: bool, resolver: Option<ArcResolver>) -> Self {
+    pub fn new(accept_invalid_certs: bool, resolver: Option<SharedResolver>) -> Self {
         Self {
-            endpoint: Arc::new(OnceLock::new()),
+            endpoint: Shared::new(OnceLock::new()),
             accept_invalid_certs,
             resolver,
         }
@@ -289,13 +310,13 @@ impl PoolInner {
 
 #[derive(Debug, Clone)]
 struct Pool {
-    inner: Arc<Mutex<PoolInner>>,
+    inner: Shared<Mutex<PoolInner>>,
 }
 
 impl Pool {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(PoolInner {
+            inner: Shared::new(Mutex::new(PoolInner {
                 connecting: HashSet::new(),
                 idle_conns: HashMap::new(),
             })),
@@ -303,7 +324,7 @@ impl Pool {
     }
 
     pub fn connecting(&self, key: Key) -> Result<()> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         if !inner.connecting.insert(key.clone()) {
             return Err(Error::H3Client(format!(
                 "HTTP/3 connecting already in progress for {key:?}"
@@ -313,7 +334,7 @@ impl Pool {
     }
 
     pub fn try_pool(&self, key: &Key) -> Option<PoolClient> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         if let Some(conn) = inner.idle_conns.get(key) {
             // We check first if the connection still valid
             // and if not, we remove it from the pool.
@@ -339,7 +360,7 @@ impl Pool {
         })
         .detach();
 
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
 
         let client = PoolClient::new(tx);
         let conn = PoolConnection::new(client.clone(), close_rx);
@@ -360,7 +381,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(accept_invalid_certs: bool, resolver: Option<ArcResolver>) -> Self {
+    pub fn new(accept_invalid_certs: bool, resolver: Option<SharedResolver>) -> Self {
         Self {
             pool: Pool::new(),
             connector: Connector::new(accept_invalid_certs, resolver),

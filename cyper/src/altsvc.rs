@@ -1,12 +1,10 @@
 //! Vendored and modified from `altsvc` crate.
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::{collections::HashMap, time::Instant};
 
 use thiserror::Error;
+
+use crate::sync::{mutex_blocking::Mutex, shared::Shared};
 
 #[derive(Error, Debug)]
 pub enum ParseError {
@@ -108,9 +106,17 @@ struct AltHostEntry {
     max_age: u64,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct KnownHosts {
-    map: Arc<Mutex<HashMap<String, AltHostEntry>>>,
+    map: Shared<Mutex<HashMap<String, AltHostEntry>>>,
+}
+
+impl Default for KnownHosts {
+    fn default() -> Self {
+        Self {
+            map: Shared::new(Mutex::new(HashMap::new())),
+        }
+    }
 }
 
 impl KnownHosts {
@@ -119,7 +125,7 @@ impl KnownHosts {
             && (srv.authority.host.is_empty() || srv.authority.host == host)
             && srv.authority.port == 443
         {
-            self.map.lock().unwrap().insert(
+            self.map.lock().insert(
                 host.to_string(),
                 AltHostEntry {
                     insert_time: Instant::now(),
@@ -132,7 +138,7 @@ impl KnownHosts {
     }
 
     pub fn find(&self, host: &str) -> bool {
-        let mut map = self.map.lock().unwrap();
+        let mut map = self.map.lock();
         if let Some((host, entry)) = map.remove_entry(host)
             && (Instant::now() - entry.insert_time).as_secs() <= entry.max_age
         {
@@ -143,6 +149,6 @@ impl KnownHosts {
     }
 
     pub fn clear(&self, host: &str) {
-        self.map.lock().unwrap().remove(host);
+        self.map.lock().remove(host);
     }
 }
