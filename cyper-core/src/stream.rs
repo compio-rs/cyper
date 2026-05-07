@@ -14,22 +14,31 @@ use send_wrapper::SendWrapper;
 
 /// A stream wrapper for hyper.
 #[derive(Debug)]
-pub struct HyperStream<S: Splittable>(SendWrapper<MaybeTlsStream<S>>);
+pub struct HyperStream<S: Splittable> {
+    inner: SendWrapper<MaybeTlsStream<S>>,
+    shutdown: bool,
+}
 
 impl<S: Splittable> HyperStream<S> {
     /// Create a new [`HyperStream`] from a plain stream.
     pub fn new_plain(s: S) -> Self {
-        Self(SendWrapper::new(MaybeTlsStream::new_plain(s)))
+        Self {
+            inner: SendWrapper::new(MaybeTlsStream::new_plain(s)),
+            shutdown: false,
+        }
     }
 
     /// Create a new [`HyperStream`] from a TLS stream.
     pub fn new_tls(s: TlsStream<S>) -> Self {
-        Self(SendWrapper::new(MaybeTlsStream::new_tls(s)))
+        Self {
+            inner: SendWrapper::new(MaybeTlsStream::new_tls(s)),
+            shutdown: false,
+        }
     }
 
     /// Whether the stream is TLS-encrypted.
     pub fn is_tls(&self) -> bool {
-        self.0.is_tls()
+        self.inner.is_tls()
     }
 }
 
@@ -40,7 +49,18 @@ where
 {
     /// Returns the negotiated ALPN protocol.
     pub fn negotiated_alpn(&self) -> Option<Cow<'_, [u8]>> {
-        self.0.negotiated_alpn()
+        self.inner.negotiated_alpn()
+    }
+
+    fn poll_shutdown_impl(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        if self.shutdown {
+            return Poll::Ready(Err(io::ErrorKind::NotConnected.into()));
+        }
+        let res = futures_util::AsyncWrite::poll_close(Pin::new(&mut *self.inner), cx);
+        if let Poll::Ready(Ok(())) = res {
+            self.shutdown = true;
+        }
+        res
     }
 }
 
@@ -57,7 +77,7 @@ where
         let uninit = unsafe { buf.as_mut() };
         uninit.fill(MaybeUninit::new(0));
         let res = ready!(futures_util::AsyncRead::poll_read(
-            Pin::new(&mut *self.0),
+            Pin::new(&mut *self.inner),
             cx,
             unsafe { uninit.assume_init_mut() }
         ))?;
@@ -76,7 +96,7 @@ where
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        futures_util::AsyncRead::poll_read(Pin::new(&mut *self.0), cx, buf)
+        futures_util::AsyncRead::poll_read(Pin::new(&mut *self.inner), cx, buf)
     }
 
     fn poll_read_vectored(
@@ -84,7 +104,7 @@ where
         cx: &mut Context<'_>,
         bufs: &mut [io::IoSliceMut<'_>],
     ) -> Poll<io::Result<usize>> {
-        futures_util::AsyncRead::poll_read_vectored(Pin::new(&mut *self.0), cx, bufs)
+        futures_util::AsyncRead::poll_read_vectored(Pin::new(&mut *self.inner), cx, bufs)
     }
 }
 
@@ -98,7 +118,7 @@ where
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        futures_util::AsyncWrite::poll_write(Pin::new(&mut *self.0), cx, buf)
+        futures_util::AsyncWrite::poll_write(Pin::new(&mut *self.inner), cx, buf)
     }
 
     fn poll_write_vectored(
@@ -106,7 +126,7 @@ where
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
-        futures_util::AsyncWrite::poll_write_vectored(Pin::new(&mut *self.0), cx, bufs)
+        futures_util::AsyncWrite::poll_write_vectored(Pin::new(&mut *self.inner), cx, bufs)
     }
 
     fn is_write_vectored(&self) -> bool {
@@ -114,11 +134,11 @@ where
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        futures_util::AsyncWrite::poll_flush(Pin::new(&mut *self.0), cx)
+        futures_util::AsyncWrite::poll_flush(Pin::new(&mut *self.inner), cx)
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        futures_util::AsyncWrite::poll_close(Pin::new(&mut *self.0), cx)
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.poll_shutdown_impl(cx)
     }
 }
 
@@ -132,7 +152,7 @@ where
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        futures_util::AsyncWrite::poll_write(Pin::new(&mut *self.0), cx, buf)
+        futures_util::AsyncWrite::poll_write(Pin::new(&mut *self.inner), cx, buf)
     }
 
     fn poll_write_vectored(
@@ -140,14 +160,14 @@ where
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
-        futures_util::AsyncWrite::poll_write_vectored(Pin::new(&mut *self.0), cx, bufs)
+        futures_util::AsyncWrite::poll_write_vectored(Pin::new(&mut *self.inner), cx, bufs)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        futures_util::AsyncWrite::poll_flush(Pin::new(&mut *self.0), cx)
+        futures_util::AsyncWrite::poll_flush(Pin::new(&mut *self.inner), cx)
     }
 
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        futures_util::AsyncWrite::poll_close(Pin::new(&mut *self.0), cx)
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.poll_shutdown_impl(cx)
     }
 }
