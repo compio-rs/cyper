@@ -22,6 +22,7 @@ hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, features = [
     "client-legacy",
     "client-proxy",
+    "client-proxy-system",
     "http1",
 ] }
 h3 = { version = "0.0.8", optional = true }
