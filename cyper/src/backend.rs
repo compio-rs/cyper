@@ -33,13 +33,19 @@ impl Default for TlsBackendInner {
     }
 }
 
+#[cfg(tls)]
+type SharedTlsConnector = Arc<Mutex<Option<Arc<TlsConnector>>>>;
+
+#[cfg(not(tls))]
+type SharedTlsConnector = ();
+
 /// Represents TLS backend options.
 #[derive(Debug, Clone, Default)]
 pub struct TlsBackend {
     #[allow(dead_code)]
     ty: TlsBackendInner,
     accept_invalid_certs: bool,
-    connector: Arc<Mutex<Option<Arc<TlsConnector>>>>,
+    connector: SharedTlsConnector,
 }
 
 impl TlsBackend {
