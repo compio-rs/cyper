@@ -1,10 +1,12 @@
+#[cfg(feature = "rustls")]
+use compio::rustls;
 #[cfg(tls)]
 use {
     crate::{Error, Result},
     compio::tls::TlsConnector,
+    std::sync::Arc,
+    synchrony::sync::mutex::Mutex,
 };
-#[cfg(feature = "rustls")]
-use {compio::rustls, std::sync::Arc};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -37,6 +39,7 @@ pub struct TlsBackend {
     #[allow(dead_code)]
     ty: TlsBackendInner,
     accept_invalid_certs: bool,
+    connector: Arc<Mutex<Option<Arc<TlsConnector>>>>,
 }
 
 impl TlsBackend {
@@ -46,6 +49,7 @@ impl TlsBackend {
         Self {
             ty: TlsBackendInner::NativeTls,
             accept_invalid_certs: self.accept_invalid_certs,
+            ..Default::default()
         }
     }
 
@@ -55,6 +59,7 @@ impl TlsBackend {
         Self {
             ty: TlsBackendInner::Rustls(None),
             accept_invalid_certs: self.accept_invalid_certs,
+            ..Default::default()
         }
     }
 
@@ -64,12 +69,14 @@ impl TlsBackend {
         Self {
             ty: TlsBackendInner::Rustls(Some(config)),
             accept_invalid_certs: self.accept_invalid_certs,
+            ..Default::default()
         }
     }
 
     /// Sets whether to accept invalid certificates.
     pub fn with_accept_invalid_certs(mut self, accept: bool) -> Self {
         self.accept_invalid_certs = accept;
+        self.connector = Default::default();
         self
     }
 
@@ -79,7 +86,7 @@ impl TlsBackend {
     }
 
     #[cfg(tls)]
-    pub(crate) fn create_connector(&self) -> Result<TlsConnector> {
+    fn build_connector(&self) -> Result<TlsConnector> {
         match &self.ty {
             TlsBackendInner::None => Err(Error::NoTlsBackend),
             #[cfg(feature = "native-tls")]
@@ -177,5 +184,20 @@ impl TlsBackend {
                 }))
             }
         }
+    }
+
+    #[cfg(tls)]
+    pub(crate) async fn connect<T>(&self, f: impl AsyncFnOnce(&TlsConnector) -> T) -> Result<T> {
+        let connector = {
+            let mut cache = self.connector.lock().await;
+            match &*cache {
+                Some(connector) => connector.clone(),
+                None => {
+                    let new = Arc::new(self.build_connector()?);
+                    cache.get_or_insert(new).clone()
+                }
+            }
+        };
+        Ok(f(&connector).await)
     }
 }

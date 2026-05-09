@@ -57,8 +57,8 @@ impl HttpStream {
             "https" => {
                 let port = port.unwrap_or(443);
                 let stream = Self::connect_tcp(&uri, host, port, resolver).await?;
-                let connector = tls.create_connector()?;
-                HyperStream::new_tls(connector.connect(host, stream).await?)
+                let fut = tls.connect(async |connector| connector.connect(host, stream).await);
+                HyperStream::new_tls(fut.await??)
             }
             _ => return Err(Error::BadScheme(scheme.to_string())),
         };
@@ -128,8 +128,8 @@ where
                     .strip_prefix('[')
                     .and_then(|h| h.strip_suffix(']'))
                     .unwrap_or(host);
-                let connector = tls.create_connector()?;
-                HyperStream::new_tls(connector.connect(host, stream).await?)
+                let fut = tls.connect(async |connector| connector.connect(host, stream).await);
+                HyperStream::new_tls(fut.await??)
             }
             _ => return Err(Error::BadScheme(scheme.to_string())),
         };
