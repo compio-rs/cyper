@@ -4,12 +4,13 @@ use std::{
     task::{Context, Poll},
 };
 
+use compio::tls::TlsConnector;
 use hyper::Uri;
 use send_wrapper::SendWrapper;
 use tower_service::Service;
 
 use crate::{
-    HttpStream, TlsBackend, WrappedHttpStream,
+    HttpStream, WrappedHttpStream,
     proxy::{self, Intercepted},
     resolve::SharedResolver,
     sync::shared::Shared,
@@ -28,7 +29,7 @@ pub struct Connector {
 impl Connector {
     /// Creates the connector with specific TLS backend.
     pub fn new(
-        tls: TlsBackend,
+        tls: Option<TlsConnector>,
         resolver: Option<SharedResolver>,
         proxies: Shared<Vec<proxy::Matcher>>,
     ) -> Self {
@@ -113,12 +114,12 @@ async fn connect_via_proxy(
 
 #[derive(Debug, Clone)]
 struct HttpsConnector {
-    tls: TlsBackend,
+    tls: Option<TlsConnector>,
     resolver: Option<SharedResolver>,
 }
 
 impl HttpsConnector {
-    pub fn new(tls: TlsBackend, resolver: Option<SharedResolver>) -> Self {
+    pub fn new(tls: Option<TlsConnector>, resolver: Option<SharedResolver>) -> Self {
         Self { tls, resolver }
     }
 }

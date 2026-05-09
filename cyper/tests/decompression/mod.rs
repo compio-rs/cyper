@@ -57,7 +57,7 @@ pub async fn compressed_response<C: Compress>(response_size: usize, chunk_size: 
     })
     .await;
 
-    let client = cyper::Client::new();
+    let client = cyper::Client::new().unwrap();
 
     let res = client
         .get(format!("http://{}/{encoding}", server.addr()))
@@ -85,7 +85,7 @@ pub async fn compressed_empty_body<C: Compress>() {
     })
     .await;
 
-    let client = cyper::Client::new();
+    let client = cyper::Client::new().unwrap();
     let res = client
         .head(format!("http://{}/{encoding}", server.addr()))
         .unwrap()
@@ -113,7 +113,7 @@ pub async fn accept_header_is_not_changed_if_set<C: Compress>() {
     })
     .await;
 
-    let client = cyper::Client::new();
+    let client = cyper::Client::new().unwrap();
 
     let res = client
         .get(format!("http://{}/accept", server.addr()))

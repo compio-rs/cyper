@@ -27,8 +27,7 @@ pub struct Client {
 
 impl Client {
     /// Create a client with default config.
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         ClientBuilder::new().build()
     }
 
@@ -496,7 +495,7 @@ impl ClientBuilder {
     }
 
     /// Returns a `Client` that uses this `ClientBuilder` configuration.
-    pub fn build(self) -> Client {
+    pub fn build(self) -> Result<Client> {
         #[allow(unused)]
         let accept_invalid_certs = self.tls.accept_invalid_certs();
         let proxies = if self.no_proxy {
@@ -506,14 +505,15 @@ impl ClientBuilder {
         } else {
             Shared::new(vec![proxy::Matcher::system()])
         };
+        let tls = match self.tls.create_connector() {
+            Ok(tls) => Some(tls),
+            Err(crate::Error::NoTlsBackend) => None,
+            Err(e) => return Err(e),
+        };
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
             .timer(CompioTimer)
-            .build(Connector::new(
-                self.tls,
-                self.resolver.clone(),
-                proxies.clone(),
-            ));
+            .build(Connector::new(tls, self.resolver.clone(), proxies.clone()));
 
         let proxies_maybe_http_auth = proxies.iter().any(|p| p.maybe_has_http_auth());
         let proxies_maybe_http_custom_headers =
@@ -530,13 +530,13 @@ impl ClientBuilder {
             cookies: self.cookies,
             accepts: self.accepts.header_value(),
         };
-        Client {
+        Ok(Client {
             client: Shared::new(client_ref),
             #[cfg(feature = "http3")]
             h3_client: crate::http3::Client::new(accept_invalid_certs, self.resolver),
             #[cfg(feature = "http3-altsvc")]
             h3_hosts: crate::altsvc::KnownHosts::default(),
-        }
+        })
     }
 
     /// Set the default headers for every request.

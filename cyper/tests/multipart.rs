@@ -40,6 +40,7 @@ async fn text_part() {
     let url = format!("http://{}/multipart/1", server.addr());
 
     let res = cyper::Client::new()
+        .unwrap()
         .post(&url)
         .unwrap()
         .multipart(form)
@@ -96,7 +97,7 @@ async fn stream_part() {
 
     let url = format!("http://{}/multipart/1", server.addr());
 
-    let client = cyper::Client::new();
+    let client = cyper::Client::new().unwrap();
 
     let res = client
         .post(&url)
@@ -152,6 +153,7 @@ async fn async_impl_file_part() {
     let url = format!("http://{}/multipart/3", server.addr());
 
     let res = cyper::Client::new()
+        .unwrap()
         .post(&url)
         .unwrap()
         .multipart(form)

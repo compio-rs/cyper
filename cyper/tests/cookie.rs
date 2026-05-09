@@ -24,7 +24,7 @@ async fn cookie_response_accessor() {
     })
     .await;
 
-    let client = cyper::Client::new();
+    let client = cyper::Client::new().unwrap();
 
     let url = format!("http://{}/", server.addr());
     let res = client.get(&url).unwrap().send().await.unwrap();
@@ -86,7 +86,7 @@ async fn cookie_store_simple() {
     })
     .await;
 
-    let client = cyper::Client::builder().cookie_store(true).build();
+    let client = cyper::Client::builder().cookie_store(true).build().unwrap();
 
     let url = format!("http://{}/", server.addr());
     client.get(&url).unwrap().send().await.unwrap();
@@ -111,7 +111,7 @@ async fn cookie_store_overwrite_existing() {
     })
     .await;
 
-    let client = cyper::Client::builder().cookie_store(true).build();
+    let client = cyper::Client::builder().cookie_store(true).build().unwrap();
 
     let url = format!("http://{}/", server.addr());
     client.get(&url).unwrap().send().await.unwrap();
@@ -131,7 +131,7 @@ async fn cookie_store_max_age() {
     })
     .await;
 
-    let client = cyper::Client::builder().cookie_store(true).build();
+    let client = cyper::Client::builder().cookie_store(true).build().unwrap();
     let url = format!("http://{}/", server.addr());
     client.get(&url).unwrap().send().await.unwrap();
     client.get(&url).unwrap().send().await.unwrap();
@@ -145,7 +145,7 @@ async fn cookie_store_expires() {
     })
     .await;
 
-    let client = cyper::Client::builder().cookie_store(true).build();
+    let client = cyper::Client::builder().cookie_store(true).build().unwrap();
 
     let url = format!("http://{}/", server.addr());
     client.get(&url).unwrap().send().await.unwrap();
@@ -166,7 +166,7 @@ async fn cookie_store_path() {
     })
     .await;
 
-    let client = cyper::Client::builder().cookie_store(true).build();
+    let client = cyper::Client::builder().cookie_store(true).build().unwrap();
 
     let url = format!("http://{}/", server.addr());
     client.get(&url).unwrap().send().await.unwrap();

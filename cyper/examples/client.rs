@@ -30,7 +30,7 @@ async fn main() {
     } else {
         Version::HTTP_11
     };
-    let client = Client::new();
+    let client = Client::new().unwrap();
     let response = client
         .get(opts.url)
         .unwrap()

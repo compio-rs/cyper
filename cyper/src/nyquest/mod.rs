@@ -52,7 +52,7 @@ impl CyperBackend {
         }
         #[cfg(feature = "cookies")]
         let builder = builder.cookie_store(options.use_cookies);
-        let client = builder.build();
+        let client = builder.build()?;
         let base_url = if let Some(url) = options.base_url {
             Some(Url::parse(&url).map_err(|_| NyquestError::InvalidUrl)?)
         } else {
