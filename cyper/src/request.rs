@@ -163,7 +163,7 @@ impl RequestBuilder {
     /// # use cyper::Error;
     ///
     /// # async fn run() -> Result<(), Error> {
-    /// let client = cyper::Client::new();
+    /// let client = cyper::Client::new().unwrap();
     /// let resp = client
     ///     .delete("http://httpbin.org/delete")?
     ///     .basic_auth("admin", Some("good password"))?
@@ -264,7 +264,7 @@ impl RequestBuilder {
     /// let mut params = HashMap::new();
     /// params.insert("lang", "rust");
     ///
-    /// let client = cyper::Client::new();
+    /// let client = cyper::Client::new().unwrap();
     /// let res = client
     ///     .post("http://httpbin.org")?
     ///     .form(&params)?
