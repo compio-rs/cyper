@@ -10,13 +10,14 @@ use compio::{
     buf::{IoBuf, IoBufMut, IoVectoredBuf},
     io::{AsyncRead, AsyncWrite, util::Splittable},
     net::TcpStream,
+    tls::TlsConnector,
 };
 use cyper_core::HyperStream;
 use futures_util::StreamExt;
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
 
-use crate::{Error, Result, TlsBackend, resolve::SharedResolver};
+use crate::{Error, Result, resolve::SharedResolver};
 
 /// A HTTP stream wrapper, based on compio, and exposes [`hyper::rt`]
 /// interfaces.
@@ -33,7 +34,7 @@ impl HttpStream {
     /// Create [`HttpStream`] with target uri and TLS backend.
     pub async fn connect(
         uri: Uri,
-        tls: TlsBackend,
+        tls: Option<TlsConnector>,
         resolver: Option<SharedResolver>,
         is_proxy: bool,
     ) -> Result<Self> {
@@ -57,7 +58,7 @@ impl HttpStream {
             "https" => {
                 let port = port.unwrap_or(443);
                 let stream = Self::connect_tcp(&uri, host, port, resolver).await?;
-                let connector = tls.create_connector()?;
+                let connector = tls.ok_or_else(|| Error::NoTlsBackend)?;
                 HyperStream::new_tls(connector.connect(host, stream).await?)
             }
             _ => return Err(Error::BadScheme(scheme.to_string())),
@@ -102,6 +103,7 @@ impl HttpStream {
     }
 }
 
+#[cfg(tls)]
 impl HttpStream<HttpStream> {
     pub fn into_wrapped(self) -> WrappedHttpStream {
         WrappedHttpStream::Embedded(self)
@@ -113,7 +115,7 @@ where
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
 {
-    pub async fn connect_with(stream: S, uri: Uri, tls: TlsBackend) -> Result<Self> {
+    pub async fn connect_with(stream: S, uri: Uri, tls: Option<TlsConnector>) -> Result<Self> {
         let scheme = uri.scheme_str().unwrap_or("http");
         let stream = match scheme {
             "http" => {
@@ -128,7 +130,7 @@ where
                     .strip_prefix('[')
                     .and_then(|h| h.strip_suffix(']'))
                     .unwrap_or(host);
-                let connector = tls.create_connector()?;
+                let connector = tls.ok_or_else(|| Error::NoTlsBackend)?;
                 HyperStream::new_tls(connector.connect(host, stream).await?)
             }
             _ => return Err(Error::BadScheme(scheme.to_string())),

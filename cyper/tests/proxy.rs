@@ -25,7 +25,8 @@ async fn http_proxy() {
     let proxy_url = format!("http://{}", server.addr());
     let client = Client::builder()
         .proxy(Proxy::http(&proxy_url).unwrap())
-        .build();
+        .build()
+        .unwrap();
 
     let res = client
         .get("http://cyper.local/prox")
@@ -58,7 +59,8 @@ async fn http_proxy_basic_auth() {
                 .unwrap()
                 .basic_auth("Aladdin", "open sesame"),
         )
-        .build();
+        .build()
+        .unwrap();
 
     let res = client
         .get("http://cyper.local/prox")
@@ -87,7 +89,8 @@ async fn http_proxy_basic_auth_parsed() {
     let proxy_url = format!("http://Aladdin:open sesame@{}", server.addr());
     let client = Client::builder()
         .proxy(Proxy::http(&proxy_url).unwrap())
-        .build();
+        .build()
+        .unwrap();
 
     let res = client
         .get("http://cyper.local/prox")
@@ -116,7 +119,8 @@ async fn http_proxy_custom_auth_header() {
                 .unwrap()
                 .custom_http_auth(http::HeaderValue::from_static("testme")),
         )
-        .build();
+        .build()
+        .unwrap();
 
     let res = client
         .get("http://cyper.local/prox")
@@ -147,7 +151,8 @@ async fn test_no_proxy() {
         .proxy(Proxy::http(&proxy_url).unwrap().no_proxy(Some(
             NoProxy::from_string(&server.addr().ip().to_string()).unwrap(),
         )))
-        .build();
+        .build()
+        .unwrap();
 
     // Request to the same server; should bypass proxy and go direct
     let url = format!("http://{}/4", server.addr());
@@ -170,7 +175,8 @@ async fn tunnel_detects_unsuccessful() {
     let client = Client::builder()
         .proxy(Proxy::https(&proxy_url).unwrap())
         .danger_accept_invalid_certs(true)
-        .build();
+        .build()
+        .unwrap();
 
     let err = client
         .get("https://cyper.local/prox")
@@ -210,7 +216,8 @@ async fn tunnel_includes_proxy_auth() {
     let client = Client::builder()
         .proxy(Proxy::https(&proxy_url).unwrap())
         .danger_accept_invalid_certs(true)
-        .build();
+        .build()
+        .unwrap();
 
     let err = client
         .get("https://cyper.local/prox")
@@ -243,7 +250,8 @@ async fn proxy_https_matches_https_only() {
     let proxy_url = format!("http://{}", server.addr());
     let client = Client::builder()
         .proxy(Proxy::https(&proxy_url).unwrap())
-        .build();
+        .build()
+        .unwrap();
 
     // An HTTP request should NOT go through the HTTPS proxy
     let res = client.get("http://cyper.local/prox").unwrap().send().await;
@@ -268,7 +276,8 @@ async fn proxy_multiple_matches_correct() {
     let client = Client::builder()
         .proxy(Proxy::https("http://unreachable.example").unwrap())
         .proxy(Proxy::http(&proxy_url).unwrap())
-        .build();
+        .build()
+        .unwrap();
 
     let res = client
         .get("http://cyper.local/prox")

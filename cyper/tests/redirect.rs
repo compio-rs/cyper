@@ -25,7 +25,7 @@ async fn test_redirect_follow() {
     })
     .await;
 
-    let client = Client::new();
+    let client = Client::new().unwrap();
 
     for path in [
         "/redirect301",
@@ -60,7 +60,7 @@ async fn test_redirect_chain() {
     })
     .await;
 
-    let client = Client::new();
+    let client = Client::new().unwrap();
     let res = client
         .get(format!("http://{}/step/1", server.addr()))
         .unwrap()
@@ -87,7 +87,8 @@ async fn test_redirect_limit() {
 
     let client = Client::builder()
         .redirect(redirect::Policy::limited(5))
-        .build();
+        .build()
+        .unwrap();
 
     let err = client
         .get(format!("http://{}/loop", server.addr()))
@@ -107,7 +108,10 @@ async fn test_no_redirect() {
     })
     .await;
 
-    let client = Client::builder().redirect(redirect::Policy::none()).build();
+    let client = Client::builder()
+        .redirect(redirect::Policy::none())
+        .build()
+        .unwrap();
 
     let res = client
         .get(format!("http://{}/redirect", server.addr()))
@@ -138,7 +142,8 @@ async fn test_redirect_custom_policy() {
                 attempt.follow()
             }
         }))
-        .build();
+        .build()
+        .unwrap();
 
     // Should stop at the redirect because our custom policy
     // stops when the target is /target
@@ -170,7 +175,7 @@ async fn test_redirect_with_query() {
     })
     .await;
 
-    let client = Client::new();
+    let client = Client::new().unwrap();
     let res = client
         .get(format!("http://{}/redirect", server.addr()))
         .unwrap()
@@ -194,7 +199,7 @@ async fn test_redirect_relative_url() {
     })
     .await;
 
-    let client = Client::new();
+    let client = Client::new().unwrap();
     let res = client
         .get(format!("http://{}/a", server.addr()))
         .unwrap()
@@ -224,7 +229,7 @@ async fn test_redirect_body_for_307() {
     })
     .await;
 
-    let client = Client::new();
+    let client = Client::new().unwrap();
     let res = client
         .post(format!("http://{}/redirect", server.addr()))
         .unwrap()
@@ -252,7 +257,7 @@ async fn test_redirect_method_change_on_301() {
     })
     .await;
 
-    let client = Client::new();
+    let client = Client::new().unwrap();
     let res = client
         .post(format!("http://{}/redirect", server.addr()))
         .unwrap()

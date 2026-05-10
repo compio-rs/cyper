@@ -11,7 +11,7 @@ use http::header::CONTENT_TYPE;
 async fn response_text() {
     let server = server::http(move |_req| async { "Hello" }).await;
 
-    let client = Client::new();
+    let client = Client::new().unwrap();
 
     let res = client
         .get(format!("http://{}/text", server.addr()))
@@ -28,7 +28,7 @@ async fn response_text() {
 async fn response_bytes() {
     let server = server::http(move |_req| async { "Hello" }).await;
 
-    let client = Client::new();
+    let client = Client::new().unwrap();
 
     let res = client
         .get(format!("http://{}/bytes", server.addr()))
@@ -76,7 +76,7 @@ async fn response_bytes_stream() {
     let server =
         server::http(move |_req| async { Body::from_stream(ChunkedBody::default()) }).await;
 
-    let client = Client::new();
+    let client = Client::new().unwrap();
 
     let res = client
         .get(format!("http://{}/bytes", server.addr()))
@@ -105,7 +105,7 @@ async fn response_bytes_stream() {
 async fn response_json() {
     let server = server::http(move |_req| async { "\"Hello\"" }).await;
 
-    let client = Client::new();
+    let client = Client::new().unwrap();
 
     let res = client
         .get(format!("http://{}/json", server.addr()))
@@ -126,7 +126,7 @@ async fn service() {
 
     let server = server::http(move |_req| async { "Hello" }).await;
 
-    let mut client = Client::new();
+    let mut client = Client::new().unwrap();
 
     let request = http::Request::builder()
         .method(Method::GET)
@@ -149,8 +149,14 @@ async fn service() {
 }
 
 #[compio::test]
+#[cfg(tls)]
 async fn test_allowed_methods() {
-    let resp = Client::new().get("https://compio.rs").unwrap().send().await;
+    let resp = Client::new()
+        .unwrap()
+        .get("https://compio.rs")
+        .unwrap()
+        .send()
+        .await;
 
     assert!(resp.is_ok());
 }
@@ -161,6 +167,7 @@ async fn test_native_tls() {
     let resp = Client::builder()
         .use_native_tls()
         .build()
+        .unwrap()
         .get("https://compio.rs")
         .unwrap()
         .send()
@@ -175,6 +182,7 @@ async fn test_rustls() {
     let resp = Client::builder()
         .use_rustls_default()
         .build()
+        .unwrap()
         .get("https://compio.rs")
         .unwrap()
         .send()
@@ -188,6 +196,7 @@ async fn test_rustls() {
 async fn test_http3() {
     let resp = Client::builder()
         .build()
+        .unwrap()
         .get("https://compio.rs")
         .unwrap()
         .version(http::Version::HTTP_3)
@@ -204,6 +213,7 @@ fn add_json_default_content_type_if_not_set_manually() {
     map.insert("body", "json");
     let content_type = http::HeaderValue::from_static("application/vnd.api+json");
     let req = Client::new()
+        .unwrap()
         .post("https://compio.rs/")
         .expect("cannot create request builder")
         .header(CONTENT_TYPE, &content_type)
@@ -221,6 +231,7 @@ fn update_json_content_type_if_set_manually() {
     let mut map = HashMap::new();
     map.insert("body", "json");
     let req = Client::new()
+        .unwrap()
         .post("https://compio.rs/")
         .expect("cannot create request builder")
         .json(&map)
@@ -239,7 +250,7 @@ pub async fn accept_encoding_header_is_not_changed_if_set() {
     })
     .await;
 
-    let client = cyper::Client::new();
+    let client = Client::new().unwrap();
 
     let res = client
         .get(format!("http://{}/accept-encoding", server.addr()))

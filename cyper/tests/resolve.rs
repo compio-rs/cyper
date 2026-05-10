@@ -20,7 +20,10 @@ impl Resolve for TestResolver {
 async fn resolve() {
     let server = server::http(move |_req| async { "Hello" }).await;
 
-    let client = Client::builder().custom_resolver(TestResolver).build();
+    let client = Client::builder()
+        .custom_resolver(TestResolver)
+        .build()
+        .unwrap();
 
     let res = client
         .get(format!("http://abc:{}/text", server.addr().port()))

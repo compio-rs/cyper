@@ -99,7 +99,7 @@ impl Response {
     ///
     /// ```
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = cyper::Client::new();
+    /// let client = cyper::Client::new().unwrap();
     /// let content = client
     ///     .get("http://httpbin.org/range/26")?
     ///     .send()
@@ -132,7 +132,7 @@ impl Response {
     ///
     /// ```
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = cyper::Client::new();
+    /// let client = cyper::Client::new().unwrap();
     /// let content = client
     ///     .get("http://httpbin.org/range/26")?
     ///     .send()
@@ -184,7 +184,7 @@ impl Response {
     /// }
     ///
     /// # async fn run() -> Result<(), Error> {
-    /// let client = cyper::Client::new();
+    /// let client = cyper::Client::new().unwrap();
     /// let ip = client
     ///     .get("http://httpbin.org/ip")?
     ///     .send()
@@ -231,7 +231,7 @@ impl Response {
     ///
     /// ```
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = cyper::Client::new();
+    /// let client = cyper::Client::new().unwrap();
     /// let bytes = client
     ///     .get("http://httpbin.org/ip")?
     ///     .send()
@@ -255,7 +255,7 @@ impl Response {
     /// use futures_util::StreamExt;
     ///
     /// # async fn run() -> cyper::Result<()> {
-    /// let client = cyper::Client::new();
+    /// let client = cyper::Client::new().unwrap();
     /// let mut bytes_stream = client
     ///     .get("http://httpbin.org/stream-bytes/16777216")?
     ///     .send()
