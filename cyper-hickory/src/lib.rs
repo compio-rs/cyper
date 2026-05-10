@@ -28,6 +28,9 @@ use send_wrapper::SendWrapper;
 #[cfg(feature = "__tls")]
 mod tls;
 
+#[cfg(feature = "https")]
+mod https;
+
 #[derive(Clone)]
 pub struct CompioRuntimeProvider {
     runtime: SendWrapper<Runtime>,
@@ -63,17 +66,7 @@ impl RuntimeProvider for CompioRuntimeProvider {
     ) -> Pin<Box<dyn Send + Future<Output = io::Result<Self::Tcp>>>> {
         Box::pin(SendWrapper::new(async move {
             let fut = async move {
-                let stream = if let Some(bind_addr) = bind_addr {
-                    let socket = if bind_addr.is_ipv4() {
-                        TcpSocket::new_v4().await?
-                    } else {
-                        TcpSocket::new_v6().await?
-                    };
-                    socket.bind(bind_addr).await?;
-                    socket.connect(server_addr).await?
-                } else {
-                    TcpStream::connect(server_addr).await?
-                };
+                let stream = connect_tcp(server_addr, bind_addr).await?;
                 Ok(CompioStream::new(stream))
             };
             if let Some(timeout) = timeout {
@@ -210,7 +203,7 @@ impl DnsUdpSocket for CompioUdpSocket {
         _cx: &mut Context<'_>,
         _buf: &mut [u8],
     ) -> Poll<io::Result<(usize, SocketAddr)>> {
-        todo!()
+        unreachable!("call recv_from directly instead of poll_recv_from")
     }
 
     async fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
@@ -231,7 +224,7 @@ impl DnsUdpSocket for CompioUdpSocket {
         _buf: &[u8],
         _target: SocketAddr,
     ) -> Poll<io::Result<usize>> {
-        todo!()
+        unreachable!("call send_to directly instead of poll_send_to")
     }
 
     async fn send_to(&self, buf: &[u8], target: SocketAddr) -> io::Result<usize> {
@@ -284,15 +277,39 @@ impl ConnectionProvider for CompioConnectionProvider {
                 })))
             }
             #[cfg(feature = "https")]
-            ProtocolConfig::Https { .. } => todo!(),
-            #[cfg(feature = "quic")]
-            ProtocolConfig::Quic { .. } => todo!(),
-            #[cfg(feature = "h3")]
-            ProtocolConfig::H3 { .. } => todo!(),
+            ProtocolConfig::Https { server_name, path } => {
+                let server_name = server_name.clone();
+                let path = path.clone();
+                let remote_addr = SocketAddr::new(ip, config.port);
+                let bind_addr = config.bind_addr;
+                let tls = cx.tls.clone();
+                Ok(Box::pin(SendWrapper::new(async move {
+                    https::connect_https(server_name, path, remote_addr, bind_addr, tls).await
+                })))
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(NetError::from("protocol config not supported")),
         }
     }
 
     fn runtime_provider(&self) -> &Self::RuntimeProvider {
         &self.provider
+    }
+}
+
+async fn connect_tcp(
+    server_addr: SocketAddr,
+    bind_addr: Option<SocketAddr>,
+) -> io::Result<TcpStream> {
+    if let Some(bind_addr) = bind_addr {
+        let socket = if bind_addr.is_ipv4() {
+            TcpSocket::new_v4().await?
+        } else {
+            TcpSocket::new_v6().await?
+        };
+        socket.bind(bind_addr).await?;
+        socket.connect(server_addr).await
+    } else {
+        TcpStream::connect(server_addr).await
     }
 }

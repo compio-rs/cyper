@@ -19,6 +19,17 @@ async-trait = "0.1"
 futures-util = { workspace = true }
 send_wrapper = { workspace = true, features = ["futures"] }
 
+cyper-core = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+http-body-util = { workspace = true, optional = true }
+hyper = { workspace = true, optional = true }
+hyper-util = { workspace = true, optional = true, features = [
+    "client-legacy",
+    "http1",
+    "http2",
+] }
+tower-service = { workspace = true, optional = true }
+
 [dev-dependencies]
 compio = { workspace = true, features = ["macros"] }
 
@@ -29,6 +40,15 @@ dnssec = ["hickory-resolver/dnssec-ring"]
 __ring = ["compio/ring", "compio/rustls"]
 __tls = ["compio/tls", "__ring"]
 tls = ["hickory-resolver/tls-ring", "__tls"]
-https = ["hickory-resolver/https-ring", "__tls"]
-quic = ["hickory-resolver/quic-ring", "compio/quic", "__ring"]
-h3 = ["hickory-resolver/h3-ring", "compio/h3", "__ring"]
+https = [
+    "hickory-resolver/https-ring",
+    "__tls",
+    "dep:cyper-core",
+    "dep:http",
+    "dep:http-body-util",
+    "dep:hyper",
+    "dep:hyper-util",
+    "dep:tower-service",
+]
+
+nightly = ["compio/nightly", "cyper-core?/nightly"]

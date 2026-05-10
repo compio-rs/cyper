@@ -8,7 +8,6 @@ use std::{
 
 use compio::{
     io::util::Splittable,
-    net::{TcpSocket, TcpStream},
     rustls::ClientConfig,
     tls::{TlsConnector, TlsStream},
 };
@@ -20,7 +19,7 @@ use hickory_net::{
 };
 use send_wrapper::SendWrapper;
 
-use crate::{CompioRuntimeProvider, CompioTimer};
+use crate::{CompioRuntimeProvider, CompioTimer, connect_tcp};
 
 pub struct CompioTlsStream<S: Splittable> {
     inner: SendWrapper<TlsStream<S>>,
@@ -84,17 +83,7 @@ pub async fn connect_tls(
     bind_addr: Option<SocketAddr>,
     tls: ClientConfig,
 ) -> Result<DnsExchange<CompioRuntimeProvider>, NetError> {
-    let stream = if let Some(bind_addr) = bind_addr {
-        let socket = if bind_addr.is_ipv4() {
-            TcpSocket::new_v4().await?
-        } else {
-            TcpSocket::new_v6().await?
-        };
-        socket.bind(bind_addr).await?;
-        socket.connect(remote_addr).await?
-    } else {
-        TcpStream::connect(remote_addr).await?
-    };
+    let stream = connect_tcp(remote_addr, bind_addr).await?;
     let remote_addr = stream.peer_addr()?;
     let stream = TlsConnector::from(Arc::new(tls))
         .connect(server_name, stream)

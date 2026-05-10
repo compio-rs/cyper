@@ -80,3 +80,16 @@ async fn resolve_tls() {
 
     test_resolve(resolver).await;
 }
+
+#[compio::test]
+#[cfg(feature = "https")]
+async fn resolve_https() {
+    let resolver = Resolver::builder_with_config(
+        ResolverConfig::https(&ALIDNS),
+        CompioConnectionProvider::default(),
+    )
+    .build()
+    .unwrap();
+
+    test_resolve(resolver).await;
+}

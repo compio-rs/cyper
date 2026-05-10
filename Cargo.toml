@@ -24,6 +24,8 @@ send_wrapper = "0.6"
 rustls = { version = "0.23.13", default-features = false }
 rustls-platform-verifier = "0.7.0"
 
+http = "1.0.0"
+http-body-util = "0.1.0"
 hyper = "1.4.1"
 hyper-util = "0.1.20"
 

@@ -17,7 +17,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 compio = { workspace = true, features = ["net", "fs", "bytes", "tls"] }
 cyper-core = { workspace = true }
 
-http = "1.0.0"
+http = { workspace = true }
 hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, features = [
     "client-legacy",
@@ -38,7 +38,7 @@ compression-codecs = { version = "0.4", optional = true }
 cookie_store = { version = "0.22", optional = true }
 encoding_rs = "0.8"
 futures-util = { workspace = true }
-http-body-util = "0.1.0"
+http-body-util = { workspace = true }
 mime = "0.3"
 mime_guess = { version = "2.0", default-features = false, optional = true }
 once_cell = { version = "1", optional = true }
