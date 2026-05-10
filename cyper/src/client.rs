@@ -799,8 +799,8 @@ impl ClientBuilder {
         }
     }
 
-    /// Enables the [hickory-dns](hickory_resolver) async resolver instead of a
-    /// default threadpool using `getaddrinfo`.
+    /// Enables the [`hickory_resolver`] async resolver instead of
+    /// [`ToSocketAddrsAsync`](compio::net::ToSocketAddrsAsync).
     ///
     /// If the `hickory-dns` feature is turned on, the default option is
     /// enabled.
