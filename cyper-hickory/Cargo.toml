@@ -33,10 +33,7 @@ tower-service = { workspace = true, optional = true }
 [dev-dependencies]
 compio = { workspace = true, features = ["macros"] }
 
-hickory-resolver = { workspace = true, features = [
-    "system-config",
-    "rustls-platform-verifier",
-] }
+hickory-resolver = { workspace = true, features = ["rustls-platform-verifier"] }
 
 [features]
 dnssec = ["hickory-resolver/dnssec-ring"]
