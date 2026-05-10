@@ -104,6 +104,12 @@ deflate = ["__decompression", "compression-codecs/zlib"]
 gzip = ["__decompression", "compression-codecs/gzip"]
 zstd = ["__decompression", "compression-codecs/zstd"]
 decompression-all = ["brotli", "deflate", "gzip", "zstd"]
+hickory-dns = [
+    "dep:cyper-hickory",
+    "dep:hickory-resolver",
+    "dep:hickory-net",
+    "hickory-resolver/system-config",
+]
 all = [
     "cookies",
     "json",
@@ -116,15 +122,10 @@ all = [
     "multipart",
     "socks",
     "decompression-all",
+    "hickory-dns",
 ]
 
 sync = ["compio/sync"]
-hickory-dns = [
-    "dep:cyper-hickory",
-    "dep:hickory-resolver",
-    "dep:hickory-net",
-    "hickory-resolver/system-config",
-]
 
 nyquest = ["dep:nyquest-interface", "sync", "compio/time"]
 nyquest-async = [
