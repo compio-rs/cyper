@@ -85,11 +85,10 @@ impl RuntimeProvider for CompioRuntimeProvider {
     fn bind_udp(
         &self,
         local_addr: SocketAddr,
-        server_addr: SocketAddr,
+        _server_addr: SocketAddr,
     ) -> Pin<Box<dyn Send + Future<Output = io::Result<Self::Udp>>>> {
         Box::pin(SendWrapper::new(async move {
             let socket = UdpSocket::bind(local_addr).await?;
-            socket.connect(server_addr).await?;
             Ok(CompioUdpSocket::new(socket))
         }))
     }
