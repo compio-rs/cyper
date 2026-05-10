@@ -13,6 +13,7 @@ repository.workspace = true
 compio = { workspace = true, features = ["net", "time", "io-compat"] }
 
 hickory-net = { workspace = true }
+hickory-resolver = { workspace = true }
 
 async-trait = "0.1"
 futures-util = { workspace = true }
@@ -21,4 +22,13 @@ send_wrapper = { workspace = true, features = ["futures"] }
 [dev-dependencies]
 compio = { workspace = true, features = ["macros"] }
 
-hickory-resolver = { workspace = true }
+hickory-resolver = { workspace = true, features = ["rustls-platform-verifier"] }
+
+[features]
+dnssec = ["hickory-resolver/dnssec-ring"]
+__ring = ["compio/ring", "compio/rustls"]
+__tls = ["compio/tls", "__ring"]
+tls = ["hickory-resolver/tls-ring", "__tls"]
+https = ["hickory-resolver/https-ring", "__tls"]
+quic = ["hickory-resolver/quic-ring", "compio/quic", "__ring"]
+h3 = ["hickory-resolver/h3-ring", "compio/h3", "__ring"]

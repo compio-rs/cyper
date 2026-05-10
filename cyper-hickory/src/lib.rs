@@ -1,6 +1,6 @@
 use std::{
     io,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -9,13 +9,24 @@ use std::{
 use async_trait::async_trait;
 use compio::{
     BufResult,
-    io::compat::AsyncStream,
+    io::{compat::AsyncStream, util::Splittable},
     net::{TcpSocket, TcpStream, UdpSocket},
     runtime::Runtime,
 };
 use futures_util::{AsyncRead, AsyncWrite};
-use hickory_net::runtime::{DnsTcpStream, DnsUdpSocket, RuntimeProvider, Spawn, Time};
+use hickory_net::{
+    NetError,
+    runtime::{DnsTcpStream, DnsUdpSocket, RuntimeProvider, Spawn, Time},
+    xfer::DnsExchange,
+};
+use hickory_resolver::{
+    ConnectionProvider, PoolContext,
+    config::{ConnectionConfig, ProtocolConfig},
+};
 use send_wrapper::SendWrapper;
+
+#[cfg(feature = "__tls")]
+mod tls;
 
 #[derive(Clone)]
 pub struct CompioRuntimeProvider {
@@ -36,7 +47,7 @@ impl CompioRuntimeProvider {
 
 impl RuntimeProvider for CompioRuntimeProvider {
     type Handle = CompioHandle;
-    type Tcp = CompioTcpStream;
+    type Tcp = CompioStream<TcpStream>;
     type Timer = CompioTimer;
     type Udp = CompioUdpSocket;
 
@@ -63,7 +74,7 @@ impl RuntimeProvider for CompioRuntimeProvider {
                 } else {
                     TcpStream::connect(server_addr).await?
                 };
-                Ok(CompioTcpStream::new(stream))
+                Ok(CompioStream::new(stream))
             };
             if let Some(timeout) = timeout {
                 compio::time::timeout(timeout, fut)
@@ -124,23 +135,30 @@ impl Time for CompioTimer {
     }
 }
 
-pub struct CompioTcpStream {
-    inner: SendWrapper<Pin<Box<AsyncStream<TcpStream>>>>,
+pub struct CompioStream<S: Splittable> {
+    inner: SendWrapper<Pin<Box<AsyncStream<S>>>>,
 }
 
-impl CompioTcpStream {
-    fn new(stream: TcpStream) -> Self {
+impl<S: Splittable> CompioStream<S> {
+    fn new(stream: S) -> Self {
         Self {
             inner: SendWrapper::new(Box::pin(AsyncStream::new(stream))),
         }
     }
 }
 
-impl DnsTcpStream for CompioTcpStream {
+impl<S: Splittable + 'static> DnsTcpStream for CompioStream<S>
+where
+    S::ReadHalf: compio::io::AsyncRead + Unpin,
+    S::WriteHalf: compio::io::AsyncWrite + Unpin,
+{
     type Time = CompioTimer;
 }
 
-impl AsyncRead for CompioTcpStream {
+impl<S: Splittable + 'static> AsyncRead for CompioStream<S>
+where
+    S::ReadHalf: compio::io::AsyncRead + Unpin,
+{
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -150,7 +168,10 @@ impl AsyncRead for CompioTcpStream {
     }
 }
 
-impl AsyncWrite for CompioTcpStream {
+impl<S: Splittable + 'static> AsyncWrite for CompioStream<S>
+where
+    S::WriteHalf: compio::io::AsyncWrite + Unpin,
+{
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -221,5 +242,57 @@ impl DnsUdpSocket for CompioUdpSocket {
             Ok(written)
         })
         .await
+    }
+}
+
+#[derive(Clone)]
+pub struct CompioConnectionProvider {
+    provider: CompioRuntimeProvider,
+}
+
+impl Default for CompioConnectionProvider {
+    fn default() -> Self {
+        Self {
+            provider: CompioRuntimeProvider::new_current(),
+        }
+    }
+}
+
+impl ConnectionProvider for CompioConnectionProvider {
+    type Conn = DnsExchange<CompioRuntimeProvider>;
+    type FutureConn = Pin<Box<dyn Future<Output = Result<Self::Conn, NetError>> + Send + 'static>>;
+    type RuntimeProvider = CompioRuntimeProvider;
+
+    fn new_connection(
+        &self,
+        ip: IpAddr,
+        config: &ConnectionConfig,
+        cx: &PoolContext,
+    ) -> Result<Self::FutureConn, hickory_net::NetError> {
+        match &config.protocol {
+            ProtocolConfig::Udp | ProtocolConfig::Tcp => {
+                self.provider.new_connection(ip, config, cx)
+            }
+            #[cfg(feature = "tls")]
+            ProtocolConfig::Tls { server_name } => {
+                let server_name = server_name.clone();
+                let remote_addr = SocketAddr::new(ip, config.port);
+                let bind_addr = config.bind_addr;
+                let tls = cx.tls.clone();
+                Ok(Box::pin(SendWrapper::new(async move {
+                    tls::connect_tls(&server_name, remote_addr, bind_addr, tls).await
+                })))
+            }
+            #[cfg(feature = "https")]
+            ProtocolConfig::Https { .. } => todo!(),
+            #[cfg(feature = "quic")]
+            ProtocolConfig::Quic { .. } => todo!(),
+            #[cfg(feature = "h3")]
+            ProtocolConfig::H3 { .. } => todo!(),
+        }
+    }
+
+    fn runtime_provider(&self) -> &Self::RuntimeProvider {
+        &self.provider
     }
 }
