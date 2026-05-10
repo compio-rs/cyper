@@ -1,10 +1,8 @@
-#[cfg(tls)]
-use {
-    crate::{Error, Result},
-    compio::tls::TlsConnector,
-};
+use compio::tls::TlsConnector;
 #[cfg(feature = "rustls")]
 use {compio::rustls, std::sync::Arc};
+
+use crate::{Error, Result};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -78,7 +76,6 @@ impl TlsBackend {
         self.accept_invalid_certs
     }
 
-    #[cfg(tls)]
     pub(crate) fn create_connector(&self) -> Result<TlsConnector> {
         match &self.ty {
             TlsBackendInner::None => Err(Error::NoTlsBackend),

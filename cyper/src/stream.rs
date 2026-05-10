@@ -103,6 +103,7 @@ impl HttpStream {
     }
 }
 
+#[cfg(tls)]
 impl HttpStream<HttpStream> {
     pub fn into_wrapped(self) -> WrappedHttpStream {
         WrappedHttpStream::Embedded(self)

@@ -149,6 +149,7 @@ async fn service() {
 }
 
 #[compio::test]
+#[cfg(tls)]
 async fn test_allowed_methods() {
     let resp = Client::new()
         .unwrap()
