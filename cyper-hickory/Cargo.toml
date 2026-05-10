@@ -1,0 +1,24 @@
+[package]
+name = "cyper-hickory"
+version = "0.1.0-rc.1"
+description = "HTTP DNS resolver for cyper"
+categories = ["asynchronous", "network-programming"]
+keywords = ["async", "net", "dns"]
+edition.workspace = true
+readme.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+compio = { workspace = true, features = ["net", "time", "io-compat"] }
+
+hickory-net = { workspace = true }
+
+async-trait = "0.1"
+futures-util = { workspace = true }
+send_wrapper = { workspace = true, features = ["futures"] }
+
+[dev-dependencies]
+compio = { workspace = true, features = ["macros"] }
+
+hickory-resolver = { workspace = true }
