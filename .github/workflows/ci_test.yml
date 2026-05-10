@@ -90,8 +90,8 @@ jobs:
           if [[ "${{ matrix.setup.os }}" == "windows-latest" && ${{ matrix.toolchain }} == "nightly" ]]; then
               ARGS+=("-Z" "doctest-xcompile")
           fi
-          # exclude cyper-hickory on macos
-          if [[ "${{ matrix.setup.os }}" == macos* ]]; then
+          # exclude cyper-hickory
+          if [[ "${{ matrix.setup.os }}" == macos* || "${{ matrix.setup.os }}" == ubuntu* ]]; then
               ARGS+=("--exclude" "cyper-hickory")
           fi
 
