@@ -1,3 +1,9 @@
+//! An adapter for using [`hickory_resolver`] with [`compio`] and
+//! [`cyper_core`].
+
+#![warn(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 use std::{
     io,
     net::{IpAddr, SocketAddr},
@@ -25,24 +31,30 @@ use hickory_resolver::{
 };
 use send_wrapper::SendWrapper;
 
-#[cfg(feature = "__tls")]
+#[cfg(feature = "tls")]
 mod tls;
 
 #[cfg(feature = "https")]
 mod https;
 
+/// [`RuntimeProvider`] implementation for [`compio`]. It should not be used
+/// directly. Instead, use [`CompioConnectionProvider`] which wraps this
+/// provider and implements [`ConnectionProvider`] for hickory.
 #[derive(Clone)]
 pub struct CompioRuntimeProvider {
     runtime: SendWrapper<Runtime>,
 }
 
 impl CompioRuntimeProvider {
+    /// Create a new [`CompioRuntimeProvider`] with the given [`Runtime`].
     pub fn new(runtime: Runtime) -> Self {
         Self {
             runtime: SendWrapper::new(runtime),
         }
     }
 
+    /// Create a new [`CompioRuntimeProvider`] with the current runtime. It will
+    /// panic if there is no current runtime.
     pub fn new_current() -> Self {
         Self::new(Runtime::current())
     }
@@ -93,6 +105,7 @@ impl RuntimeProvider for CompioRuntimeProvider {
     }
 }
 
+/// The handle for compio runtime.
 #[derive(Clone)]
 pub struct CompioHandle {
     runtime: SendWrapper<Runtime>,
@@ -110,6 +123,7 @@ impl Spawn for CompioHandle {
     }
 }
 
+/// The timer for compio runtime.
 pub struct CompioTimer;
 
 #[async_trait]
@@ -128,6 +142,7 @@ impl Time for CompioTimer {
     }
 }
 
+/// [`DnsTcpStream`] implementation for compio's stream.
 pub struct CompioStream<S: Splittable> {
     inner: SendWrapper<Pin<Box<AsyncStream<S>>>>,
 }
@@ -182,6 +197,7 @@ where
     }
 }
 
+/// [`DnsUdpSocket`] implementation for compio's [`UdpSocket`].
 pub struct CompioUdpSocket {
     inner: SendWrapper<UdpSocket>,
 }
@@ -238,6 +254,13 @@ impl DnsUdpSocket for CompioUdpSocket {
     }
 }
 
+/// The [`ConnectionProvider`] implementation for compio runtime. It should be
+/// used to create [`Resolver`](hickory_resolver::Resolver) for compio runtime.
+///
+/// This provider should be created by [`CompioConnectionProvider::default`]
+/// inside a compio runtime. If you're not inside a compio runtime, call
+/// [`Runtime::enter`] to enter a compio runtime first, then create the
+/// provider.
 #[derive(Clone)]
 pub struct CompioConnectionProvider {
     provider: CompioRuntimeProvider,
@@ -245,6 +268,23 @@ pub struct CompioConnectionProvider {
 
 impl Default for CompioConnectionProvider {
     fn default() -> Self {
+        Self {
+            provider: CompioRuntimeProvider::new_current(),
+        }
+    }
+}
+
+impl CompioConnectionProvider {
+    /// Create a new [`CompioConnectionProvider`] with the given [`Runtime`].
+    pub fn new(runtime: Runtime) -> Self {
+        Self {
+            provider: CompioRuntimeProvider::new(runtime),
+        }
+    }
+
+    /// Create a new [`CompioConnectionProvider`] with the current runtime. It
+    /// will panic if there is no current runtime.
+    pub fn new_current() -> Self {
         Self {
             provider: CompioRuntimeProvider::new_current(),
         }
