@@ -58,3 +58,41 @@ impl<T: Resolve> TypeErasedResolve for T {
         .boxed_local()
     }
 }
+
+#[cfg(feature = "hickory-dns")]
+mod hickory {
+    use std::net::IpAddr;
+
+    use cyper_hickory::CompioConnectionProvider;
+    use futures_util::Stream;
+    use hickory_resolver::Resolver;
+    use http::Uri;
+
+    pub struct HickoryResolver(Resolver<CompioConnectionProvider>);
+
+    impl HickoryResolver {
+        pub fn new() -> crate::Result<Self> {
+            Ok(Self(
+                Resolver::builder(CompioConnectionProvider::default())?.build()?,
+            ))
+        }
+    }
+
+    impl super::Resolve for HickoryResolver {
+        type Err = crate::Error;
+
+        async fn resolve(&self, uri: &Uri) -> Result<impl Stream<Item = IpAddr> + '_, Self::Err> {
+            let host = match uri.host() {
+                Some(host) => host,
+                None => return Err(crate::Error::InvalidUrl(url::Url::parse(&uri.to_string())?)),
+            };
+            let lookup = self.0.lookup_ip(host).await?;
+            Ok(futures_util::stream::iter(
+                lookup.iter().collect::<Vec<_>>(),
+            ))
+        }
+    }
+}
+
+#[cfg(feature = "hickory-dns")]
+pub(crate) use hickory::HickoryResolver;

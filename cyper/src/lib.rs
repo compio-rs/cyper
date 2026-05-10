@@ -144,6 +144,10 @@ pub enum Error {
     /// Proxy error.
     #[error("proxy: {0}")]
     Proxy(#[source] Box<dyn std::error::Error + Send + Sync>),
+    /// Hickory error.
+    #[cfg(feature = "hickory-dns")]
+    #[error("hickory: {0}")]
+    Hickory(#[from] hickory_net::NetError),
 }
 
 /// The result type used in `cyper`.

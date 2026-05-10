@@ -16,8 +16,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 compio = { workspace = true, features = ["net", "fs", "bytes", "tls"] }
 cyper-core = { workspace = true }
+cyper-hickory = { workspace = true, optional = true }
 
-http = "1.0.0"
+http = { workspace = true }
 hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, features = [
     "client-legacy",
@@ -26,6 +27,9 @@ hyper-util = { workspace = true, features = [
     "http1",
 ] }
 h3 = { version = "0.0.8", optional = true }
+
+hickory-net = { workspace = true, optional = true }
+hickory-resolver = { workspace = true, optional = true }
 
 nyquest-interface = { version = "0.4.0", optional = true }
 
@@ -38,7 +42,7 @@ compression-codecs = { version = "0.4", optional = true }
 cookie_store = { version = "0.22", optional = true }
 encoding_rs = "0.8"
 futures-util = { workspace = true }
-http-body-util = "0.1.0"
+http-body-util = { workspace = true }
 mime = "0.3"
 mime_guess = { version = "2.0", default-features = false, optional = true }
 once_cell = { version = "1", optional = true }
@@ -100,6 +104,12 @@ deflate = ["__decompression", "compression-codecs/zlib"]
 gzip = ["__decompression", "compression-codecs/gzip"]
 zstd = ["__decompression", "compression-codecs/zstd"]
 decompression-all = ["brotli", "deflate", "gzip", "zstd"]
+hickory-dns = [
+    "dep:cyper-hickory",
+    "dep:hickory-resolver",
+    "dep:hickory-net",
+    "hickory-resolver/system-config",
+]
 all = [
     "cookies",
     "json",
@@ -112,6 +122,7 @@ all = [
     "multipart",
     "socks",
     "decompression-all",
+    "hickory-dns",
 ]
 
 sync = ["compio/sync"]

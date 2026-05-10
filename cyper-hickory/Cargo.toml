@@ -1,0 +1,62 @@
+[package]
+name = "cyper-hickory"
+version = "0.1.0-rc.1"
+description = "HTTP DNS resolver for cyper"
+categories = ["asynchronous", "network-programming"]
+keywords = ["async", "net", "dns"]
+edition.workspace = true
+readme.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+compio = { workspace = true, features = ["net", "time", "io-compat"] }
+
+hickory-net = { workspace = true }
+hickory-resolver = { workspace = true }
+
+async-trait = "0.1"
+futures-util = { workspace = true }
+send_wrapper = { workspace = true, features = ["futures"] }
+
+cyper-core = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+http-body-util = { workspace = true, optional = true }
+hyper = { workspace = true, optional = true }
+hyper-util = { workspace = true, optional = true, features = [
+    "client-legacy",
+    "http1",
+    "http2",
+] }
+tower-service = { workspace = true, optional = true }
+
+[dev-dependencies]
+compio = { workspace = true, features = ["macros"] }
+
+hickory-resolver = { workspace = true, features = ["rustls-platform-verifier"] }
+hickory-server = { workspace = true, features = ["rustls-platform-verifier"] }
+
+futures-channel = { workspace = true }
+rcgen = "0.14"
+tokio = { version = "1", features = ["rt", "net"] }
+tokio-util = "0.7"
+
+[features]
+dnssec = ["hickory-resolver/dnssec-ring", "hickory-server/dnssec-ring"]
+__ring = ["compio/ring", "compio/rustls"]
+__tls = ["compio/tls", "__ring"]
+tls = ["__tls", "hickory-resolver/tls-ring", "hickory-server/tls-ring"]
+https = [
+    "__tls",
+    "hickory-resolver/https-ring",
+    "hickory-server/https-ring",
+    "dep:cyper-core",
+    "dep:http",
+    "dep:http-body-util",
+    "dep:hyper",
+    "dep:hyper-util",
+    "dep:tower-service",
+]
+all = ["dnssec", "tls", "https"]
+
+nightly = ["compio/nightly", "cyper-core?/nightly"]

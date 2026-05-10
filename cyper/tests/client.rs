@@ -206,9 +206,9 @@ async fn test_http3() {
     resp.text().await.unwrap();
 }
 
-#[test]
+#[compio::test]
 #[cfg(feature = "json")]
-fn add_json_default_content_type_if_not_set_manually() {
+async fn add_json_default_content_type_if_not_set_manually() {
     let mut map = HashMap::new();
     map.insert("body", "json");
     let content_type = http::HeaderValue::from_static("application/vnd.api+json");
@@ -225,9 +225,9 @@ fn add_json_default_content_type_if_not_set_manually() {
     assert_eq!(content_type, req.headers().get(CONTENT_TYPE).unwrap());
 }
 
-#[test]
+#[compio::test]
 #[cfg(feature = "json")]
-fn update_json_content_type_if_set_manually() {
+async fn update_json_content_type_if_set_manually() {
     let mut map = HashMap::new();
     map.insert("body", "json");
     let req = Client::new()
