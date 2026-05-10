@@ -53,3 +53,6 @@ https = [
 all = ["dnssec", "tls", "https"]
 
 nightly = ["compio/nightly", "cyper-core?/nightly"]
+
+# Only for local testing.
+__alidns = []

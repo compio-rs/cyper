@@ -10,7 +10,8 @@ use hickory_resolver::{
     config::{ResolverConfig, ServerGroup},
 };
 
-const ALIDNS: ServerGroup<'static> = ServerGroup {
+#[cfg(feature = "__alidns")]
+const DNS: ServerGroup<'static> = ServerGroup {
     ips: &[
         IpAddr::V6(Ipv6Addr::new(0x2400, 0x3200, 0, 0, 0, 0, 0, 1)),
         IpAddr::V6(Ipv6Addr::new(0x2400, 0x3200, 0xbaba, 0, 0, 0, 0, 1)),
@@ -18,6 +19,8 @@ const ALIDNS: ServerGroup<'static> = ServerGroup {
     server_name: "dns.alidns.com",
     path: "/dns-query",
 };
+#[cfg(not(feature = "__alidns"))]
+const DNS: ServerGroup<'static> = hickory_resolver::config::CLOUDFLARE;
 
 async fn test_resolve(resolver: Resolver<CompioConnectionProvider>) {
     let ips = resolver
@@ -45,7 +48,7 @@ async fn test_resolve(resolver: Resolver<CompioConnectionProvider>) {
 #[compio::test]
 async fn resolve() {
     let resolver = Resolver::builder_with_config(
-        ResolverConfig::udp_and_tcp(&ALIDNS),
+        ResolverConfig::udp_and_tcp(&DNS),
         CompioConnectionProvider::default(),
     )
     .build()
@@ -58,7 +61,7 @@ async fn resolve() {
 #[cfg(feature = "tls")]
 async fn resolve_tls() {
     let resolver = Resolver::builder_with_config(
-        ResolverConfig::tls(&ALIDNS),
+        ResolverConfig::tls(&DNS),
         CompioConnectionProvider::default(),
     )
     .build()
@@ -71,7 +74,7 @@ async fn resolve_tls() {
 #[cfg(feature = "https")]
 async fn resolve_https() {
     let resolver = Resolver::builder_with_config(
-        ResolverConfig::https(&ALIDNS),
+        ResolverConfig::https(&DNS),
         CompioConnectionProvider::default(),
     )
     .build()
