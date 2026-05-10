@@ -82,13 +82,10 @@ mod hickory {
         type Err = crate::Error;
 
         async fn resolve(&self, uri: &Uri) -> Result<impl Stream<Item = IpAddr> + '_, Self::Err> {
-            let host = uri.host().ok_or_else(|| {
-                crate::Error::InvalidUrl(
-                    uri.to_string()
-                        .parse()
-                        .expect("URI should have been validated before"),
-                )
-            })?;
+            let host = match uri.host() {
+                Some(host) => host,
+                None => return Err(crate::Error::InvalidUrl(url::Url::parse(&uri.to_string())?)),
+            };
             let lookup = self.0.lookup_ip(host).await?;
             Ok(futures_util::stream::iter(
                 lookup.iter().collect::<Vec<_>>(),
