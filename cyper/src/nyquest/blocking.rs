@@ -19,8 +19,8 @@ impl BlockingBackend for CyperBackend {
     type BlockingClient = CyperBlockingClient;
 
     fn create_blocking_client(&self, options: ClientOptions) -> Result<Self::BlockingClient> {
-        let client = self.create_client(options)?;
         let runtime = Runtime::new()?;
+        let client = runtime.enter(|| self.create_client(options))?;
         Ok(CyperBlockingClient {
             client,
             runtime: SendWrapper::new(runtime),
