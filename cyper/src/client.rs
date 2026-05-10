@@ -469,6 +469,7 @@ pub struct ClientBuilder {
     no_proxy: bool,
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
+    hickory_dns: bool,
 }
 
 impl Default for ClientBuilder {
@@ -491,6 +492,7 @@ impl ClientBuilder {
             no_proxy: false,
             #[cfg(feature = "cookies")]
             cookies: None,
+            hickory_dns: cfg!(feature = "hickory-dns"),
         }
     }
 
@@ -510,10 +512,20 @@ impl ClientBuilder {
             Err(crate::Error::NoTlsBackend) => None,
             Err(e) => return Err(e),
         };
+        let resolver = match self.resolver {
+            Some(r) => Some(r),
+            None => match self.hickory_dns {
+                false => None,
+                #[cfg(feature = "hickory-dns")]
+                true => Some(SharedResolver::new(crate::resolve::HickoryResolver::new()?)),
+                #[cfg(not(feature = "hickory-dns"))]
+                true => unreachable!("hickory-dns shouldn't be enabled unless the feature is"),
+            },
+        };
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
             .timer(CompioTimer)
-            .build(Connector::new(tls, self.resolver.clone(), proxies.clone()));
+            .build(Connector::new(tls, resolver.clone(), proxies.clone()));
 
         let proxies_maybe_http_auth = proxies.iter().any(|p| p.maybe_has_http_auth());
         let proxies_maybe_http_custom_headers =
@@ -533,7 +545,7 @@ impl ClientBuilder {
         Ok(Client {
             client: Shared::new(client_ref),
             #[cfg(feature = "http3")]
-            h3_client: crate::http3::Client::new(accept_invalid_certs, self.resolver),
+            h3_client: crate::http3::Client::new(accept_invalid_certs, resolver),
             #[cfg(feature = "http3-altsvc")]
             h3_hosts: crate::altsvc::KnownHosts::default(),
         })
@@ -782,6 +794,44 @@ impl ClientBuilder {
         }
 
         #[cfg(not(feature = "deflate"))]
+        {
+            self
+        }
+    }
+
+    /// Enables the [hickory-dns](hickory_resolver) async resolver instead of a
+    /// default threadpool using `getaddrinfo`.
+    ///
+    /// If the `hickory-dns` feature is turned on, the default option is
+    /// enabled.
+    ///
+    /// # Optional
+    ///
+    /// This requires the optional `hickory-dns` feature to be enabled
+    ///
+    /// # Warning
+    ///
+    /// The hickory resolver does not work exactly the same, or on all the
+    /// platforms that the default resolver does
+    #[cfg(feature = "hickory-dns")]
+    pub fn hickory_dns(mut self, enable: bool) -> ClientBuilder {
+        self.hickory_dns = enable;
+        self
+    }
+
+    /// Disables the hickory-dns async resolver.
+    ///
+    /// This method exists even if the optional `hickory-dns` feature is not
+    /// enabled. This can be used to ensure a `Client` doesn't use the
+    /// hickory-dns async resolver even if another dependency were to enable
+    /// the optional `hickory-dns` feature.
+    pub fn no_hickory_dns(self) -> ClientBuilder {
+        #[cfg(feature = "hickory-dns")]
+        {
+            self.hickory_dns(false)
+        }
+
+        #[cfg(not(feature = "hickory-dns"))]
         {
             self
         }

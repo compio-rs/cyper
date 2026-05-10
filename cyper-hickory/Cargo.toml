@@ -33,7 +33,10 @@ tower-service = { workspace = true, optional = true }
 [dev-dependencies]
 compio = { workspace = true, features = ["macros"] }
 
-hickory-resolver = { workspace = true, features = ["rustls-platform-verifier"] }
+hickory-resolver = { workspace = true, features = [
+    "system-config",
+    "rustls-platform-verifier",
+] }
 
 [features]
 dnssec = ["hickory-resolver/dnssec-ring"]
@@ -50,5 +53,6 @@ https = [
     "dep:hyper-util",
     "dep:tower-service",
 ]
+all = ["dnssec", "tls", "https"]
 
 nightly = ["compio/nightly", "cyper-core?/nightly"]
