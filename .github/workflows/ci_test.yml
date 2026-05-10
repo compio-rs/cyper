@@ -90,7 +90,5 @@ jobs:
           if [[ "${{ matrix.setup.os }}" == "windows-latest" && ${{ matrix.toolchain }} == "nightly" ]]; then
               ARGS+=("-Z" "doctest-xcompile")
           fi
-          # exclude cyper-hickory
-          ARGS+=("--exclude" "cyper-hickory")
 
           cargo +${{ matrix.toolchain }} test --workspace "${ARGS[@]}"

@@ -10,7 +10,6 @@ repository = "https://github.com/compio-rs/cyper"
 
 [workspace.dependencies]
 compio = { version = "0.19.0-rc.1", default-features = false }
-compio-quic = "0.8.0-rc.1"
 cyper-core = { path = "./cyper-core", default-features = false, version = "0.9.0-rc.2" }
 cyper-axum = { path = "./cyper-axum", default-features = false, version = "0.9.0-rc.1" }
 cyper-hickory = { path = "./cyper-hickory", default-features = false, version = "0.1.0-rc.1" }
@@ -38,3 +37,4 @@ axum = { version = "0.8.1", default-features = false }
 
 hickory-net = { version = "0.26", default-features = false }
 hickory-resolver = { version = "0.26", default-features = false }
+hickory-server = { version = "0.26" }
