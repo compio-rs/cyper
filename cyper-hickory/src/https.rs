@@ -5,6 +5,7 @@ use std::{
     str::FromStr,
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use compio::{
@@ -37,8 +38,9 @@ pub async fn connect_https(
     remote_addr: SocketAddr,
     bind_addr: Option<SocketAddr>,
     tls: ClientConfig,
+    timeout: Duration,
 ) -> Result<DnsExchange<CompioRuntimeProvider>, NetError> {
-    let connector = Connector::new(server_name.clone(), remote_addr, bind_addr, tls);
+    let connector = Connector::new(server_name.clone(), remote_addr, bind_addr, tls, timeout);
 
     let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
         .set_host(true)
@@ -209,6 +211,7 @@ struct Connector {
     remote_addr: SocketAddr,
     bind_addr: Option<SocketAddr>,
     tls: Arc<ClientConfig>,
+    timeout: Duration,
 }
 
 impl Connector {
@@ -217,12 +220,14 @@ impl Connector {
         remote_addr: SocketAddr,
         bind_addr: Option<SocketAddr>,
         tls: ClientConfig,
+        timeout: Duration,
     ) -> Self {
         Self {
             server_name,
             remote_addr,
             bind_addr,
             tls: Arc::new(tls),
+            timeout,
         }
     }
 }
@@ -241,8 +246,9 @@ impl Service<Uri> for Connector {
         let remote_addr = self.remote_addr;
         let bind_addr = self.bind_addr;
         let tls = self.tls.clone();
+        let timeout = self.timeout;
         Box::pin(SendWrapper::new(async move {
-            let stream = connect_tcp(remote_addr, bind_addr).await?;
+            let stream = connect_tcp(remote_addr, bind_addr, Some(timeout)).await?;
             let stream = TlsConnector::from(tls)
                 .connect(&server_name, stream)
                 .await?;

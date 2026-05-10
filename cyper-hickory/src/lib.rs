@@ -77,18 +77,8 @@ impl RuntimeProvider for CompioRuntimeProvider {
         timeout: Option<Duration>,
     ) -> Pin<Box<dyn Send + Future<Output = io::Result<Self::Tcp>>>> {
         Box::pin(SendWrapper::new(async move {
-            let fut = async move {
-                let stream = connect_tcp(server_addr, bind_addr).await?;
-                Ok(CompioStream::new(stream))
-            };
-            if let Some(timeout) = timeout {
-                compio::time::timeout(timeout, fut)
-                    .await
-                    .map_err(|_| io::ErrorKind::TimedOut.into())
-                    .flatten()
-            } else {
-                fut.await
-            }
+            let stream = connect_tcp(server_addr, bind_addr, timeout).await?;
+            Ok(CompioStream::new(stream))
         }))
     }
 
@@ -312,8 +302,18 @@ impl ConnectionProvider for CompioConnectionProvider {
                 let remote_addr = SocketAddr::new(ip, config.port);
                 let bind_addr = config.bind_addr;
                 let tls = cx.tls.clone();
+                let timeout = cx.options.timeout;
+                let max_active_requests = cx.options.max_active_requests;
                 Ok(Box::pin(SendWrapper::new(async move {
-                    tls::connect_tls(&server_name, remote_addr, bind_addr, tls).await
+                    tls::connect_tls(
+                        &server_name,
+                        remote_addr,
+                        bind_addr,
+                        tls,
+                        timeout,
+                        max_active_requests,
+                    )
+                    .await
                 })))
             }
             #[cfg(feature = "https")]
@@ -323,8 +323,10 @@ impl ConnectionProvider for CompioConnectionProvider {
                 let remote_addr = SocketAddr::new(ip, config.port);
                 let bind_addr = config.bind_addr;
                 let tls = cx.tls.clone();
+                let timeout = cx.options.timeout;
                 Ok(Box::pin(SendWrapper::new(async move {
-                    https::connect_https(server_name, path, remote_addr, bind_addr, tls).await
+                    https::connect_https(server_name, path, remote_addr, bind_addr, tls, timeout)
+                        .await
                 })))
             }
             #[allow(unreachable_patterns)]
@@ -340,16 +342,27 @@ impl ConnectionProvider for CompioConnectionProvider {
 async fn connect_tcp(
     server_addr: SocketAddr,
     bind_addr: Option<SocketAddr>,
+    timeout: Option<Duration>,
 ) -> io::Result<TcpStream> {
-    if let Some(bind_addr) = bind_addr {
-        let socket = if bind_addr.is_ipv4() {
-            TcpSocket::new_v4().await?
+    let fut = async move {
+        if let Some(bind_addr) = bind_addr {
+            let socket = if bind_addr.is_ipv4() {
+                TcpSocket::new_v4().await?
+            } else {
+                TcpSocket::new_v6().await?
+            };
+            socket.bind(bind_addr).await?;
+            socket.connect(server_addr).await
         } else {
-            TcpSocket::new_v6().await?
-        };
-        socket.bind(bind_addr).await?;
-        socket.connect(server_addr).await
+            TcpStream::connect(server_addr).await
+        }
+    };
+    if let Some(timeout) = timeout {
+        compio::time::timeout(timeout, fut)
+            .await
+            .map_err(|_| io::ErrorKind::TimedOut.into())
+            .flatten()
     } else {
-        TcpStream::connect(server_addr).await
+        fut.await
     }
 }

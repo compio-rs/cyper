@@ -4,6 +4,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use compio::{
@@ -82,8 +83,10 @@ pub async fn connect_tls(
     remote_addr: SocketAddr,
     bind_addr: Option<SocketAddr>,
     tls: ClientConfig,
+    timeout: Duration,
+    max_active_requests: usize,
 ) -> Result<DnsExchange<CompioRuntimeProvider>, NetError> {
-    let stream = connect_tcp(remote_addr, bind_addr).await?;
+    let stream = connect_tcp(remote_addr, bind_addr, Some(timeout)).await?;
     let remote_addr = stream.peer_addr()?;
     let stream = TlsConnector::from(Arc::new(tls))
         .connect(server_name, stream)
@@ -93,7 +96,8 @@ pub async fn connect_tls(
     let multiplexer = DnsMultiplexer::new(
         hickory_net::tcp::TcpClientStream::from_stream(stream),
         handle,
-    );
+    )
+    .with_max_active_requests(max_active_requests);
     let (exchange, background) = DnsExchange::from_stream(multiplexer);
     compio::runtime::spawn(background).detach();
     Ok(exchange)
