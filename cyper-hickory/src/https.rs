@@ -43,6 +43,7 @@ pub async fn connect_https(
     let connector = Connector::new(server_name.clone(), remote_addr, bind_addr, tls, timeout);
 
     let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
+        .http2_only(true)
         .set_host(true)
         .timer(CompioTimer)
         .build(connector);
@@ -87,16 +88,16 @@ impl RequestSender {
         let mut parts = uri::Parts::default();
         parts.path_and_query = Some(
             uri::PathAndQuery::from_str(&path)
-                .map_err(|e| NetError::from(format!("invalid DoH path: {e}")))?,
+                .map_err(|e| NetError::from(format!("invalid DoH path: {e:?}")))?,
         );
         parts.scheme = Some(uri::Scheme::HTTPS);
         parts.authority = Some(
             uri::Authority::from_str(&server_name)
-                .map_err(|e| NetError::from(format!("invalid authority: {e}")))?,
+                .map_err(|e| NetError::from(format!("invalid authority: {e:?}")))?,
         );
 
-        let url =
-            Uri::from_parts(parts).map_err(|e| NetError::from(format!("uri parse error: {e}")))?;
+        let url = Uri::from_parts(parts)
+            .map_err(|e| NetError::from(format!("uri parse error: {e:?}")))?;
 
         let request = Request::builder()
             .method("POST")
@@ -105,12 +106,12 @@ impl RequestSender {
             .header(http::header::ACCEPT, MIME_APPLICATION_DNS)
             .header(http::header::CONTENT_LENGTH, bytes.len())
             .body(Full::new(Bytes::from(bytes)))
-            .map_err(|e| NetError::from(format!("build request error: {e}")))?;
+            .map_err(|e| NetError::from(format!("build request error: {e:?}")))?;
 
         let response = client
             .request(request)
             .await
-            .map_err(|e| NetError::from(format!("request error: {e}")))?;
+            .map_err(|e| NetError::from(format!("request error: {e:?}")))?;
         let (response, body) = response.into_parts();
 
         let content_length = response
@@ -118,15 +119,15 @@ impl RequestSender {
             .get(http::header::CONTENT_LENGTH)
             .map(|v| v.to_str())
             .transpose()
-            .map_err(|e| NetError::from(format!("bad headers received: {e}")))?
+            .map_err(|e| NetError::from(format!("bad headers received: {e:?}")))?
             .map(usize::from_str)
             .transpose()
-            .map_err(|e| NetError::from(format!("bad headers received: {e}")))?;
+            .map_err(|e| NetError::from(format!("bad headers received: {e:?}")))?;
 
         let response_bytes = body
             .collect()
             .await
-            .map_err(|e| NetError::from(format!("read response body error: {e}")))?
+            .map_err(|e| NetError::from(format!("read response body error: {e:?}")))?
             .to_bytes();
 
         if let Some(content_length) = content_length
@@ -259,18 +260,12 @@ impl Service<Uri> for Connector {
 
 struct HttpStream {
     inner: HyperStream<TcpStream>,
-    is_h2: bool,
 }
 
 impl HttpStream {
     pub fn new(stream: TlsStream<TcpStream>) -> Self {
-        let is_h2 = stream
-            .negotiated_alpn()
-            .map(|alpn| *alpn == *b"h2")
-            .unwrap_or_default();
         Self {
             inner: HyperStream::new_tls(stream),
-            is_h2,
         }
     }
 }
@@ -317,11 +312,6 @@ impl hyper::rt::Write for HttpStream {
 
 impl Connection for HttpStream {
     fn connected(&self) -> Connected {
-        let conn = Connected::new();
-        if self.is_h2 {
-            conn.negotiated_h2()
-        } else {
-            conn
-        }
+        Connected::new().negotiated_h2()
     }
 }

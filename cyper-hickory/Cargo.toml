@@ -34,15 +34,21 @@ tower-service = { workspace = true, optional = true }
 compio = { workspace = true, features = ["macros"] }
 
 hickory-resolver = { workspace = true, features = ["rustls-platform-verifier"] }
+hickory-server = { workspace = true, features = ["rustls-platform-verifier"] }
+
+futures-channel = { workspace = true }
+rcgen = "0.14"
+tokio = { version = "1", features = ["rt"] }
 
 [features]
-dnssec = ["hickory-resolver/dnssec-ring"]
+dnssec = ["hickory-resolver/dnssec-ring", "hickory-server/dnssec-ring"]
 __ring = ["compio/ring", "compio/rustls"]
 __tls = ["compio/tls", "__ring"]
-tls = ["hickory-resolver/tls-ring", "__tls"]
+tls = ["__tls", "hickory-resolver/tls-ring", "hickory-server/tls-ring"]
 https = [
-    "hickory-resolver/https-ring",
     "__tls",
+    "hickory-resolver/https-ring",
+    "hickory-server/https-ring",
     "dep:cyper-core",
     "dep:http",
     "dep:http-body-util",
@@ -53,6 +59,3 @@ https = [
 all = ["dnssec", "tls", "https"]
 
 nightly = ["compio/nightly", "cyper-core?/nightly"]
-
-# Only for local testing.
-__alidns = []
