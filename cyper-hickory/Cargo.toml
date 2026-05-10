@@ -38,7 +38,8 @@ hickory-server = { workspace = true, features = ["rustls-platform-verifier"] }
 
 futures-channel = { workspace = true }
 rcgen = "0.14"
-tokio = { version = "1", features = ["rt"] }
+tokio = { version = "1", features = ["rt", "net"] }
+tokio-util = "0.7"
 
 [features]
 dnssec = ["hickory-resolver/dnssec-ring", "hickory-server/dnssec-ring"]

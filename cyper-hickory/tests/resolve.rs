@@ -2,6 +2,8 @@
 use std::sync::Arc;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    panic::resume_unwind,
+    thread::JoinHandle,
     time::Duration,
 };
 
@@ -25,6 +27,7 @@ use hickory_server::{
     server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
     zone_handler::{MessageResponseBuilder, UpdateRequest},
 };
+use tokio_util::sync::CancellationToken;
 
 enum ServerType {
     Tcp,
@@ -59,36 +62,37 @@ impl RequestHandler for DnsHandler {
     }
 }
 
-async fn spawn_dns_server(ty: ServerType) -> SocketAddr {
+async fn spawn_dns_server(ty: ServerType) -> (SocketAddr, CancellationToken, JoinHandle<()>) {
     use tokio::net::{TcpListener, UdpSocket};
 
     let (tx, rx) = oneshot::channel();
 
-    std::thread::spawn(move || {
+    let handle = std::thread::spawn(move || {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()
             .block_on(async move {
                 let mut server = hickory_server::Server::new(DnsHandler);
+                let token = server.shutdown_token().clone();
                 match ty {
                     ServerType::Tcp => {
                         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
                         let addr = listener.local_addr().unwrap();
-                        tx.send(addr).unwrap();
+                        tx.send((addr, token)).unwrap();
                         server.register_listener(listener, Duration::from_secs(5), 1024);
                     }
                     ServerType::Udp => {
                         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
                         let addr = socket.local_addr().unwrap();
-                        tx.send(addr).unwrap();
+                        tx.send((addr, token)).unwrap();
                         server.register_socket(socket);
                     }
                     #[cfg(feature = "tls")]
                     ServerType::Tls(config) => {
                         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
                         let addr = listener.local_addr().unwrap();
-                        tx.send(addr).unwrap();
+                        tx.send((addr, token)).unwrap();
                         server
                             .register_tls_listener_with_tls_config(
                                 listener,
@@ -101,7 +105,7 @@ async fn spawn_dns_server(ty: ServerType) -> SocketAddr {
                     ServerType::Https(config, hostname, endpoint) => {
                         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
                         let addr = listener.local_addr().unwrap();
-                        tx.send(addr).unwrap();
+                        tx.send((addr, token)).unwrap();
                         server
                             .register_https_listener_with_tls_config(
                                 listener,
@@ -117,7 +121,8 @@ async fn spawn_dns_server(ty: ServerType) -> SocketAddr {
             });
     });
 
-    rx.await.unwrap()
+    let (addr, token) = rx.await.unwrap();
+    (addr, token, handle)
 }
 
 async fn test_resolve(resolver: Resolver<CompioConnectionProvider>) {
@@ -141,7 +146,7 @@ fn update_port(config: &mut ResolverConfig, port: u16) {
 
 #[compio::test]
 async fn resolve_tcp() {
-    let addr = spawn_dns_server(ServerType::Tcp).await;
+    let (addr, token, handle) = spawn_dns_server(ServerType::Tcp).await;
     let group = ServerGroup {
         ips: &[addr.ip()],
         server_name: "dns.compio.rs",
@@ -154,11 +159,13 @@ async fn resolve_tcp() {
         .unwrap();
 
     test_resolve(resolver).await;
+    token.cancel();
+    handle.join().unwrap_or_else(|e| resume_unwind(e))
 }
 
 #[compio::test]
 async fn resolve_udp() {
-    let addr = spawn_dns_server(ServerType::Udp).await;
+    let (addr, token, handle) = spawn_dns_server(ServerType::Udp).await;
     let group = ServerGroup {
         ips: &[addr.ip()],
         server_name: "dns.compio.rs",
@@ -171,6 +178,8 @@ async fn resolve_udp() {
         .unwrap();
 
     test_resolve(resolver).await;
+    token.cancel();
+    handle.join().unwrap_or_else(|e| resume_unwind(e))
 }
 
 #[cfg(feature = "__tls")]
@@ -205,7 +214,7 @@ fn rcgen() -> (ServerConfig, ClientConfig) {
 #[cfg(feature = "tls")]
 async fn resolve_tls() {
     let (server_config, client_config) = rcgen();
-    let addr = spawn_dns_server(ServerType::Tls(server_config)).await;
+    let (addr, token, handle) = spawn_dns_server(ServerType::Tls(server_config)).await;
     let group = ServerGroup {
         ips: &[addr.ip()],
         server_name: "dns.compio.rs",
@@ -219,13 +228,15 @@ async fn resolve_tls() {
         .unwrap();
 
     test_resolve(resolver).await;
+    token.cancel();
+    handle.join().unwrap_or_else(|e| resume_unwind(e))
 }
 
 #[compio::test]
 #[cfg(feature = "https")]
 async fn resolve_https() {
     let (server_config, client_config) = rcgen();
-    let addr = spawn_dns_server(ServerType::Https(
+    let (addr, token, handle) = spawn_dns_server(ServerType::Https(
         server_config,
         "dns.compio.rs".to_string(),
         "/dns-query".to_string(),
@@ -244,4 +255,6 @@ async fn resolve_https() {
         .unwrap();
 
     test_resolve(resolver).await;
+    token.cancel();
+    handle.join().unwrap_or_else(|e| resume_unwind(e))
 }
