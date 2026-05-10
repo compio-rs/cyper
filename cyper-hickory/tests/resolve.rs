@@ -1,6 +1,6 @@
 use std::{
     collections::HashSet,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    net::{IpAddr, Ipv6Addr},
 };
 
 use compio::net::ToSocketAddrsAsync;
@@ -13,8 +13,6 @@ use hickory_resolver::{
 
 const ALIDNS: ServerGroup<'static> = ServerGroup {
     ips: &[
-        IpAddr::V4(Ipv4Addr::new(223, 5, 5, 5)),
-        IpAddr::V4(Ipv4Addr::new(223, 6, 6, 6)),
         IpAddr::V6(Ipv6Addr::new(0x2400, 0x3200, 0, 0, 0, 0, 0, 1)),
         IpAddr::V6(Ipv6Addr::new(0x2400, 0x3200, 0xbaba, 0, 0, 0, 0, 1)),
     ],
