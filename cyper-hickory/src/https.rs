@@ -30,7 +30,7 @@ use hyper_util::client::legacy::{
 use send_wrapper::SendWrapper;
 use tower_service::Service;
 
-use crate::{CompioRuntimeProvider, connect_tcp};
+use crate::{CompioRuntimeProvider, MIME_APPLICATION_DNS, connect_tcp};
 
 pub async fn connect_https(
     server_name: Arc<str>,
@@ -52,8 +52,6 @@ pub async fn connect_https(
     compio::runtime::spawn(bg).detach();
     Ok(exchange)
 }
-
-const MIME_APPLICATION_DNS: &str = "application/dns-message";
 
 struct RequestSender {
     client: Arc<Client<Connector, Full<Bytes>>>,

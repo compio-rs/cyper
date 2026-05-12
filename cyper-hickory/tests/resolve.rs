@@ -33,9 +33,13 @@ enum ServerType {
     Tcp,
     Udp,
     #[cfg(feature = "tls")]
-    Tls(compio::rustls::ServerConfig),
+    Tls(ServerConfig),
     #[cfg(feature = "https")]
-    Https(compio::rustls::ServerConfig, String, String),
+    Https(ServerConfig, String, String),
+    #[cfg(feature = "quic")]
+    Quic(ServerConfig),
+    #[cfg(feature = "h3")]
+    H3(ServerConfig),
 }
 
 const IP_RESPONSE: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
@@ -113,6 +117,35 @@ async fn spawn_dns_server(ty: ServerType) -> (SocketAddr, CancellationToken, Joi
                                 Arc::new(config),
                                 Some(hostname),
                                 endpoint,
+                            )
+                            .unwrap();
+                    }
+                    #[cfg(feature = "quic")]
+                    ServerType::Quic(mut config) => {
+                        config.alpn_protocols = vec![b"doq".to_vec()];
+                        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+                        let addr = socket.local_addr().unwrap();
+                        tx.send((addr, token)).unwrap();
+                        server
+                            .register_quic_listener_and_tls_config(
+                                socket,
+                                Duration::from_secs(5),
+                                Arc::new(config),
+                            )
+                            .unwrap();
+                    }
+                    #[cfg(feature = "h3")]
+                    ServerType::H3(mut config) => {
+                        config.alpn_protocols = vec![b"h3".to_vec()];
+                        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+                        let addr = socket.local_addr().unwrap();
+                        tx.send((addr, token)).unwrap();
+                        server
+                            .register_h3_listener_with_tls_config(
+                                socket,
+                                Duration::from_secs(5),
+                                Arc::new(config),
+                                Some("dns.compio.rs".to_string()),
                             )
                             .unwrap();
                     }
@@ -248,6 +281,50 @@ async fn resolve_https() {
         path: "/dns-query",
     };
     let mut config = ResolverConfig::https(&group);
+    update_port(&mut config, addr.port());
+    let resolver = Resolver::builder_with_config(config, CompioConnectionProvider::default())
+        .with_tls_config(client_config)
+        .build()
+        .unwrap();
+
+    test_resolve(resolver).await;
+    token.cancel();
+    handle.join().unwrap_or_else(|e| resume_unwind(e))
+}
+
+#[compio::test]
+#[cfg(feature = "quic")]
+async fn resolve_quic() {
+    let (server_config, client_config) = rcgen();
+    let (addr, token, handle) = spawn_dns_server(ServerType::Quic(server_config)).await;
+    let group = ServerGroup {
+        ips: &[addr.ip()],
+        server_name: "dns.compio.rs",
+        path: "/dns-query",
+    };
+    let mut config = ResolverConfig::quic(&group);
+    update_port(&mut config, addr.port());
+    let resolver = Resolver::builder_with_config(config, CompioConnectionProvider::default())
+        .with_tls_config(client_config)
+        .build()
+        .unwrap();
+
+    test_resolve(resolver).await;
+    token.cancel();
+    handle.join().unwrap_or_else(|e| resume_unwind(e))
+}
+
+#[compio::test]
+#[cfg(feature = "h3")]
+async fn resolve_h3() {
+    let (server_config, client_config) = rcgen();
+    let (addr, token, handle) = spawn_dns_server(ServerType::H3(server_config)).await;
+    let group = ServerGroup {
+        ips: &[addr.ip()],
+        server_name: "dns.compio.rs",
+        path: "/dns-query",
+    };
+    let mut config = ResolverConfig::h3(&group);
     update_port(&mut config, addr.port());
     let resolver = Resolver::builder_with_config(config, CompioConnectionProvider::default())
         .with_tls_config(client_config)

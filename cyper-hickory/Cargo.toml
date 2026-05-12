@@ -11,6 +11,7 @@ repository.workspace = true
 
 [dependencies]
 compio = { workspace = true, features = ["net", "time", "io-compat"] }
+compio-log = { workspace = true }
 
 hickory-net = { workspace = true }
 hickory-resolver = { workspace = true }
@@ -57,6 +58,22 @@ https = [
     "dep:hyper-util",
     "dep:tower-service",
 ]
-all = ["dnssec", "tls", "https"]
+__quic = ["__ring", "compio/quic"]
+quic = [
+    "__quic",
+    "compio/bytes",
+    "hickory-resolver/quic-ring",
+    "hickory-server/quic-ring",
+]
+h3 = [
+    "__quic",
+    "compio/h3",
+    "dep:http",
+    "hickory-resolver/h3-ring",
+    "hickory-server/h3-ring",
+]
+all = ["dnssec", "tls", "https", "quic", "h3"]
+
+enable_log = ["compio-log/enable_log"]
 
 nightly = ["compio/nightly", "cyper-core?/nightly"]

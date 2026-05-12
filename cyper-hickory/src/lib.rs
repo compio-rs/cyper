@@ -37,6 +37,12 @@ mod tls;
 #[cfg(feature = "https")]
 mod https;
 
+#[cfg(feature = "quic")]
+mod quic;
+
+#[cfg(feature = "h3")]
+mod h3;
+
 /// [`RuntimeProvider`] implementation for [`compio`]. It should not be used
 /// directly. Instead, use [`CompioConnectionProvider`] which wraps this
 /// provider and implements [`ConnectionProvider`] for hickory.
@@ -328,8 +334,43 @@ impl ConnectionProvider for CompioConnectionProvider {
                         .await
                 })))
             }
-            #[allow(unreachable_patterns)]
-            _ => Err(NetError::from("protocol config not supported")),
+            #[cfg(feature = "quic")]
+            ProtocolConfig::Quic { server_name } => {
+                let server_name = server_name.clone();
+                let remote_addr = SocketAddr::new(ip, config.port);
+                let bind_addr = config.bind_addr;
+                let tls = cx.tls.clone();
+                let timeout = cx.options.timeout;
+                Ok(Box::pin(SendWrapper::new(async move {
+                    quic::connect_quic(server_name, remote_addr, bind_addr, tls, timeout).await
+                })))
+            }
+            #[cfg(feature = "h3")]
+            ProtocolConfig::H3 {
+                server_name,
+                path,
+                disable_grease,
+            } => {
+                let server_name = server_name.clone();
+                let path = path.clone();
+                let remote_addr = SocketAddr::new(ip, config.port);
+                let bind_addr = config.bind_addr;
+                let tls = cx.tls.clone();
+                let timeout = cx.options.timeout;
+                let enable_grease = !disable_grease;
+                Ok(Box::pin(SendWrapper::new(async move {
+                    h3::connect_h3(
+                        server_name,
+                        path,
+                        remote_addr,
+                        bind_addr,
+                        tls,
+                        enable_grease,
+                        timeout,
+                    )
+                    .await
+                })))
+            }
         }
     }
 
@@ -365,3 +406,6 @@ async fn connect_tcp(
         fut.await
     }
 }
+
+#[cfg(any(feature = "https", feature = "h3"))]
+const MIME_APPLICATION_DNS: &str = "application/dns-message";
