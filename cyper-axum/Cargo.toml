@@ -11,7 +11,7 @@ repository = { workspace = true }
 
 [dependencies]
 compio = { workspace = true, features = ["net", "time"] }
-compio-log = "0.1.0"
+compio-log = { workspace = true }
 cyper-core = { workspace = true }
 socket2 = { workspace = true }
 

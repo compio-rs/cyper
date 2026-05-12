@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use compio::{
     BufResult,
     io::{compat::AsyncStream, util::Splittable},
-    net::{TcpSocket, TcpStream, UdpSocket},
+    net::{TcpStream, UdpSocket},
     runtime::Runtime,
 };
 use futures_util::{AsyncRead, AsyncWrite};
@@ -36,6 +36,15 @@ mod tls;
 
 #[cfg(feature = "https")]
 mod https;
+
+#[cfg(feature = "quic")]
+mod quic;
+
+#[cfg(feature = "h3")]
+mod h3;
+
+mod util;
+pub(crate) use util::*;
 
 /// [`RuntimeProvider`] implementation for [`compio`]. It should not be used
 /// directly. Instead, use [`CompioConnectionProvider`] which wraps this
@@ -328,40 +337,47 @@ impl ConnectionProvider for CompioConnectionProvider {
                         .await
                 })))
             }
-            #[allow(unreachable_patterns)]
-            _ => Err(NetError::from("protocol config not supported")),
+            #[cfg(feature = "quic")]
+            ProtocolConfig::Quic { server_name } => {
+                let server_name = server_name.clone();
+                let remote_addr = SocketAddr::new(ip, config.port);
+                let bind_addr = config.bind_addr;
+                let tls = cx.tls.clone();
+                let timeout = cx.options.timeout;
+                Ok(Box::pin(SendWrapper::new(async move {
+                    quic::connect_quic(server_name, remote_addr, bind_addr, tls, timeout).await
+                })))
+            }
+            #[cfg(feature = "h3")]
+            ProtocolConfig::H3 {
+                server_name,
+                path,
+                disable_grease,
+            } => {
+                let server_name = server_name.clone();
+                let path = path.clone();
+                let remote_addr = SocketAddr::new(ip, config.port);
+                let bind_addr = config.bind_addr;
+                let tls = cx.tls.clone();
+                let timeout = cx.options.timeout;
+                let enable_grease = !disable_grease;
+                Ok(Box::pin(SendWrapper::new(async move {
+                    h3::connect_h3(
+                        server_name,
+                        path,
+                        remote_addr,
+                        bind_addr,
+                        tls,
+                        enable_grease,
+                        timeout,
+                    )
+                    .await
+                })))
+            }
         }
     }
 
     fn runtime_provider(&self) -> &Self::RuntimeProvider {
         &self.provider
-    }
-}
-
-async fn connect_tcp(
-    server_addr: SocketAddr,
-    bind_addr: Option<SocketAddr>,
-    timeout: Option<Duration>,
-) -> io::Result<TcpStream> {
-    let fut = async move {
-        if let Some(bind_addr) = bind_addr {
-            let socket = if bind_addr.is_ipv4() {
-                TcpSocket::new_v4().await?
-            } else {
-                TcpSocket::new_v6().await?
-            };
-            socket.bind(bind_addr).await?;
-            socket.connect(server_addr).await
-        } else {
-            TcpStream::connect(server_addr).await
-        }
-    };
-    if let Some(timeout) = timeout {
-        compio::time::timeout(timeout, fut)
-            .await
-            .map_err(|_| io::ErrorKind::TimedOut.into())
-            .flatten()
-    } else {
-        fut.await
     }
 }
