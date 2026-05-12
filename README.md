@@ -1,4 +1,4 @@
-# Cyper
+# cyper
 
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/compio-rs/cyper/blob/master/LICENSE)
 [![crates.io](https://img.shields.io/crates/v/cyper)](https://crates.io/crates/cyper)
@@ -15,8 +15,8 @@ This project references code from [reqwest](https://github.com/seanmonstar/reqwe
 Add `compio` and `cyper` as dependency:
 
 ```
-compio = { version = "0.19.0", features = ["macros"] }
-cyper = "0.9.0"
+cargo add cyper
+cargo add compio --features macros
 ```
 
 Then we can start a simple HTTP request:
@@ -53,6 +53,7 @@ async fn main() {
   - [x] Socks 4/5
 - [x] redirect
 - [x] decompression
+- [x] hickory DNS
 
 ## Nyquest support
 `cyper` supports `nyquest` experimentally. Start with registering:
