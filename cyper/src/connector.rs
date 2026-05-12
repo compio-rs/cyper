@@ -100,7 +100,7 @@ async fn connect_via_proxy(
                 .call(dst.clone())
                 .await
                 .map_err(|e| crate::Error::Proxy(e.into()))?;
-            Ok(HttpStream::connect_with(tunneled, dst, tls)
+            Ok(HttpStream::connect_with_https(tunneled, dst, tls)
                 .await?
                 .into_wrapped())
         }
@@ -196,7 +196,7 @@ mod socks {
         // Wrap with TLS if targeting HTTPS.
         match dst.scheme_str() {
             #[cfg(tls)]
-            Some("https") => Ok(HttpStream::connect_with(stream, dst, tls)
+            Some("https") => Ok(HttpStream::connect_with_https(stream, dst, tls)
                 .await?
                 .into_wrapped()),
             _ => Ok(stream.into_wrapped()),

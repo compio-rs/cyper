@@ -110,31 +110,25 @@ impl HttpStream<HttpStream> {
     }
 }
 
+#[cfg(tls)]
 impl<S: Splittable + 'static> HttpStream<S>
 where
     S::ReadHalf: AsyncRead + Unpin,
     S::WriteHalf: AsyncWrite + Unpin,
 {
-    pub async fn connect_with(stream: S, uri: Uri, tls: Option<TlsConnector>) -> Result<Self> {
-        let scheme = uri.scheme_str().unwrap_or("http");
-        let stream = match scheme {
-            "http" => {
-                let _tls = tls;
-                HyperStream::new_plain(stream)
-            }
-            #[cfg(tls)]
-            "https" => {
-                let host = uri.host().expect("there should be host");
-                // `Uri::host()` includes brackets for IPv6, we must strip them.
-                let host = host
-                    .strip_prefix('[')
-                    .and_then(|h| h.strip_suffix(']'))
-                    .unwrap_or(host);
-                let connector = tls.ok_or_else(|| Error::NoTlsBackend)?;
-                HyperStream::new_tls(connector.connect(host, stream).await?)
-            }
-            _ => return Err(Error::BadScheme(scheme.to_string())),
-        };
+    pub async fn connect_with_https(
+        stream: S,
+        uri: Uri,
+        tls: Option<TlsConnector>,
+    ) -> Result<Self> {
+        let host = uri.host().expect("there should be host");
+        // `Uri::host()` includes brackets for IPv6, we must strip them.
+        let host = host
+            .strip_prefix('[')
+            .and_then(|h| h.strip_suffix(']'))
+            .unwrap_or(host);
+        let connector = tls.ok_or_else(|| Error::NoTlsBackend)?;
+        let stream = HyperStream::new_tls(connector.connect(host, stream).await?);
         let is_h2 = stream
             .negotiated_alpn()
             .map(|alpn| *alpn == *b"h2")
