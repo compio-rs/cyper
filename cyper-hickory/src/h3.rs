@@ -11,8 +11,9 @@ use compio::{
     bytes::{Buf, Bytes},
     rustls::ClientConfig,
 };
-use compio_log::debug;
-use futures_util::Stream;
+use compio_log::{debug, warn};
+use futures_channel::mpsc::Sender;
+use futures_util::{FutureExt, SinkExt, Stream};
 use hickory_net::{
     NetError,
     proto::op::{DnsRequest, DnsResponse},
@@ -50,12 +51,23 @@ pub async fn connect_h3(
         .await
         .map_err(|e| NetError::from(format!("h3 client error: {e}")))?;
 
+    let (tx, mut rx) = futures_channel::mpsc::channel::<()>(1);
+
     compio::runtime::spawn(async move {
-        driver.wait_idle().await;
+        futures_util::select! {
+            error = driver.wait_idle().fuse() => {
+                if !error.is_h3_no_error() {
+                    warn!("h3 connection failed to close: {}", error);
+                }
+            }
+            _ = rx.recv().fuse() => {
+                debug!("h3 connection is shutting down: {}", remote_addr);
+            }
+        }
     })
     .detach();
 
-    let stream = H3RequestSender::new(send_request, server_name, path);
+    let stream = H3RequestSender::new(send_request, server_name, path, tx);
     let (exchange, bg) = DnsExchange::from_stream(stream);
     compio::runtime::spawn(bg).detach();
     Ok(exchange)
@@ -67,15 +79,22 @@ struct H3RequestSender {
     send_request: SendWrapper<SendRequest>,
     server_name: Arc<str>,
     path: Arc<str>,
+    tx: Sender<()>,
     is_shutdown: bool,
 }
 
 impl H3RequestSender {
-    fn new(send_request: SendRequest, server_name: Arc<str>, path: Arc<str>) -> Self {
+    fn new(
+        send_request: SendRequest,
+        server_name: Arc<str>,
+        path: Arc<str>,
+        tx: Sender<()>,
+    ) -> Self {
         Self {
             send_request: SendWrapper::new(send_request),
             server_name,
             path,
+            tx,
             is_shutdown: false,
         }
     }
@@ -217,6 +236,13 @@ impl DnsRequestSender for H3RequestSender {
 
     fn shutdown(&mut self) {
         self.is_shutdown = true;
+        compio::runtime::spawn({
+            let mut tx = self.tx.clone();
+            async move {
+                let _ = tx.send(()).await;
+            }
+        })
+        .detach();
     }
 
     fn is_shutdown(&self) -> bool {
@@ -229,9 +255,15 @@ impl Stream for H3RequestSender {
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.is_shutdown {
-            Poll::Ready(None)
-        } else {
-            Poll::Ready(Some(Ok(())))
+            return Poll::Ready(None);
         }
+
+        if self.tx.is_closed() {
+            return Poll::Ready(Some(Err(NetError::from(
+                "h3 connection is already shutdown",
+            ))));
+        }
+
+        Poll::Ready(Some(Ok(())))
     }
 }

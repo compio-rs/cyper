@@ -17,6 +17,7 @@ hickory-net = { workspace = true }
 hickory-resolver = { workspace = true }
 
 async-trait = "0.1"
+futures-channel = { workspace = true, optional = true }
 futures-util = { workspace = true }
 send_wrapper = { workspace = true, features = ["futures"] }
 
@@ -70,6 +71,7 @@ h3 = [
     "quic",
     "compio/h3",
     "dep:http",
+    "dep:futures-channel",
     "hickory-resolver/h3-ring",
     "hickory-server/h3-ring",
 ]
