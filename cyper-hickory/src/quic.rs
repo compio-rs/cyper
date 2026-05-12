@@ -6,7 +6,11 @@ use std::{
     time::Duration,
 };
 
-use compio::{bytes::Bytes, quic::Connection, rustls::ClientConfig};
+use compio::{
+    bytes::Bytes,
+    quic::{Connection, ConnectionError, OpenStreamError, ReadError, ReadExactError, WriteError},
+    rustls::ClientConfig,
+};
 use compio_log::debug;
 use futures_util::Stream;
 use hickory_net::{
@@ -64,9 +68,7 @@ impl CompioQuicClientStream {
         conn: SendWrapper<Connection>,
         request: DnsRequest,
     ) -> Result<DnsResponse, NetError> {
-        let (send, recv) = conn
-            .open_bi()
-            .map_err(|e| NetError::from(format!("open_bi error: {e}")))?;
+        let (send, recv) = conn.open_bi().map_err(ToNetError::to_net_error)?;
 
         let mut send = send.into_compat();
         let mut recv = recv.into_compat();
@@ -82,21 +84,20 @@ impl CompioQuicClientStream {
 
         send.write_all_chunks(&mut [len_bytes, bytes])
             .await
-            .map_err(|e| NetError::from(format!("quic write error: {e}")))?;
+            .map_err(ToNetError::to_net_error)?;
 
-        send.finish()
-            .map_err(|e| NetError::from(format!("quic finish error: {e}")))?;
+        send.finish()?;
 
         let mut len_buf = [0u8; 2];
         recv.read_exact(&mut len_buf[..])
             .await
-            .map_err(|e| NetError::from(format!("quic read length error: {e}")))?;
+            .map_err(ToNetError::to_net_error)?;
         let response_len = u16::from_be_bytes(len_buf) as usize;
 
         let mut msg_buf = vec![0u8; response_len];
         recv.read_exact(&mut msg_buf[..])
             .await
-            .map_err(|e| NetError::from(format!("quic read message error: {e}")))?;
+            .map_err(ToNetError::to_net_error)?;
 
         let message = Message::from_vec(&msg_buf)?;
         if message.id != 0 {
@@ -141,6 +142,88 @@ impl Stream for CompioQuicClientStream {
             Poll::Ready(None)
         } else {
             Poll::Ready(Some(Ok(())))
+        }
+    }
+}
+
+trait ToNetError {
+    type QuinnError;
+
+    fn to_net_error(self) -> Self::QuinnError;
+}
+
+impl ToNetError for OpenStreamError {
+    type QuinnError = NetError;
+
+    fn to_net_error(self) -> Self::QuinnError {
+        match self {
+            Self::ConnectionLost(err) => err.to_net_error().into(),
+            Self::StreamsExhausted => NetError::from(self.to_string()),
+        }
+    }
+}
+
+impl ToNetError for ConnectionError {
+    type QuinnError = quinn::ConnectionError;
+
+    fn to_net_error(self) -> Self::QuinnError {
+        use quinn::ConnectionError as QuinnConnectionError;
+
+        match self {
+            Self::VersionMismatch => QuinnConnectionError::VersionMismatch,
+            Self::TransportError(err) => QuinnConnectionError::TransportError(err),
+            Self::ConnectionClosed(err) => QuinnConnectionError::ConnectionClosed(err),
+            Self::ApplicationClosed(err) => QuinnConnectionError::ApplicationClosed(err),
+            Self::Reset => QuinnConnectionError::Reset,
+            Self::TimedOut => QuinnConnectionError::TimedOut,
+            Self::LocallyClosed => QuinnConnectionError::LocallyClosed,
+            Self::CidsExhausted => QuinnConnectionError::CidsExhausted,
+        }
+    }
+}
+
+impl ToNetError for WriteError {
+    type QuinnError = NetError;
+
+    fn to_net_error(self) -> Self::QuinnError {
+        use quinn::WriteError as QuinnWriteError;
+
+        let err = match self {
+            Self::Stopped(code) => QuinnWriteError::Stopped(code),
+            Self::ConnectionLost(err) => QuinnWriteError::ConnectionLost(err.to_net_error()),
+            Self::ClosedStream => QuinnWriteError::ClosedStream,
+            Self::ZeroRttRejected => QuinnWriteError::ZeroRttRejected,
+            _ => return NetError::from(self.to_string()),
+        };
+        NetError::QuinnWriteError(err)
+    }
+}
+
+impl ToNetError for ReadExactError {
+    type QuinnError = quinn::ReadExactError;
+
+    fn to_net_error(self) -> Self::QuinnError {
+        use quinn::ReadExactError as QuinnReadExactError;
+
+        match self {
+            Self::FinishedEarly(len) => QuinnReadExactError::FinishedEarly(len),
+            Self::ReadError(err) => QuinnReadExactError::ReadError(err.to_net_error()),
+        }
+    }
+}
+
+impl ToNetError for ReadError {
+    type QuinnError = quinn::ReadError;
+
+    fn to_net_error(self) -> Self::QuinnError {
+        use quinn::ReadError as QuinnReadError;
+
+        match self {
+            Self::Reset(code) => QuinnReadError::Reset(code),
+            Self::ConnectionLost(err) => QuinnReadError::ConnectionLost(err.to_net_error()),
+            Self::ClosedStream => QuinnReadError::ClosedStream,
+            Self::IllegalOrderedRead => QuinnReadError::IllegalOrderedRead,
+            Self::ZeroRttRejected => QuinnReadError::ZeroRttRejected,
         }
     }
 }

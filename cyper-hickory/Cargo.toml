@@ -30,6 +30,7 @@ hyper-util = { workspace = true, optional = true, features = [
     "http1",
     "http2",
 ] }
+quinn = { version = "0.11", default-features = false }
 tower-service = { workspace = true, optional = true }
 
 [dev-dependencies]
