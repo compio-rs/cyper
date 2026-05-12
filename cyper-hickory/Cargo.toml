@@ -48,7 +48,7 @@ __ring = ["compio/ring", "compio/rustls"]
 __tls = ["compio/tls", "__ring"]
 tls = ["__tls", "hickory-resolver/tls-ring", "hickory-server/tls-ring"]
 https = [
-    "__tls",
+    "tls",
     "hickory-resolver/https-ring",
     "hickory-server/https-ring",
     "dep:cyper-core",
@@ -61,12 +61,13 @@ https = [
 __quic = ["__ring", "compio/quic"]
 quic = [
     "__quic",
+    "tls",
     "compio/bytes",
     "hickory-resolver/quic-ring",
     "hickory-server/quic-ring",
 ]
 h3 = [
-    "__quic",
+    "quic",
     "compio/h3",
     "dep:http",
     "hickory-resolver/h3-ring",

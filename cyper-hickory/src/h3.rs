@@ -7,7 +7,10 @@ use std::{
     time::Duration,
 };
 
-use compio::{bytes::Bytes, rustls::ClientConfig};
+use compio::{
+    bytes::{Buf, Bytes},
+    rustls::ClientConfig,
+};
 use compio_log::debug;
 use futures_util::Stream;
 use hickory_net::{
@@ -16,7 +19,6 @@ use hickory_net::{
     xfer::{DnsExchange, DnsRequestSender, DnsResponseStream},
 };
 use http::{Request, Uri, uri};
-use hyper::body::Buf;
 use send_wrapper::SendWrapper;
 
 use crate::{CompioRuntimeProvider, MIME_APPLICATION_DNS};
