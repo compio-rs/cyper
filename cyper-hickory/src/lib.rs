@@ -409,3 +409,46 @@ async fn connect_tcp(
 
 #[cfg(any(feature = "https", feature = "h3"))]
 const MIME_APPLICATION_DNS: &str = "application/dns-message";
+
+#[cfg(feature = "__quic")]
+async fn connect_quic(
+    server_name: std::sync::Arc<str>,
+    remote_addr: SocketAddr,
+    bind_addr: Option<SocketAddr>,
+    mut config: compio::rustls::ClientConfig,
+    timeout: Duration,
+    alpn: &[u8],
+) -> Result<compio::quic::Connection, NetError> {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    use compio::quic::ClientBuilder;
+
+    if config.alpn_protocols.is_empty() {
+        config.alpn_protocols = vec![alpn.to_vec()];
+    }
+    let enable_early_data = config.enable_early_data;
+
+    let bind = bind_addr.unwrap_or_else(|| {
+        if remote_addr.is_ipv4() {
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
+        } else {
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0)
+        }
+    });
+
+    let endpoint = ClientBuilder::new_with_rustls_client_config(config)
+        .bind(bind)
+        .await?;
+
+    let mut connecting = endpoint.connect(remote_addr, &server_name, None)?;
+    if enable_early_data {
+        match connecting.into_0rtt() {
+            Ok(conn) => return Ok(conn),
+            Err(f) => connecting = f,
+        }
+    }
+    compio::time::timeout(timeout, connecting)
+        .await
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))?
+        .map_err(|e| NetError::from(format!("quic connection error: {e}")))
+}

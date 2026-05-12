@@ -1,5 +1,5 @@
 use std::{
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::SocketAddr,
     pin::Pin,
     str::FromStr,
     sync::Arc,
@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use compio::{bytes::Bytes, quic::ClientBuilder, rustls::ClientConfig};
+use compio::{bytes::Bytes, rustls::ClientConfig};
 use compio_log::debug;
 use futures_util::Stream;
 use hickory_net::{
@@ -28,38 +28,18 @@ pub async fn connect_h3(
     path: Arc<str>,
     remote_addr: SocketAddr,
     bind_addr: Option<SocketAddr>,
-    mut config: ClientConfig,
+    config: ClientConfig,
     enable_grease: bool,
     timeout: Duration,
 ) -> Result<DnsExchange<CompioRuntimeProvider>, NetError> {
-    config.alpn_protocols = vec![H3_ALPN.to_vec()];
-    let enable_early_data = config.enable_early_data;
-
-    let bind = bind_addr.unwrap_or_else(|| {
-        if remote_addr.is_ipv4() {
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
-        } else {
-            SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0)
-        }
-    });
-
-    let endpoint = ClientBuilder::new_with_rustls_client_config(config)
-        .bind(bind)
-        .await?;
-
-    let mut connecting = endpoint.connect(remote_addr, &server_name, None)?;
-    let conn = async {
-        if enable_early_data {
-            match connecting.into_0rtt() {
-                Ok(conn) => return Ok(conn),
-                Err(f) => connecting = f,
-            }
-        }
-        compio::time::timeout(timeout, connecting)
-            .await
-            .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))?
-            .map_err(|e| NetError::from(format!("quic connection error: {e}")))
-    }
+    let conn = crate::connect_quic(
+        server_name.clone(),
+        remote_addr,
+        bind_addr,
+        config,
+        timeout,
+        H3_ALPN,
+    )
     .await?;
 
     let (mut driver, send_request) = compio::quic::h3::client::builder()
