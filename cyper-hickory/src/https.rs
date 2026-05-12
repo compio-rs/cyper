@@ -2,7 +2,6 @@ use std::{
     io,
     net::SocketAddr,
     pin::Pin,
-    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
     time::Duration,
@@ -20,7 +19,7 @@ use hickory_net::{
     proto::op::{DnsRequest, DnsResponse},
     xfer::{DnsExchange, DnsRequestSender, DnsResponseStream},
 };
-use http::{Request, Uri, uri};
+use http::{Request, Uri};
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Bytes, rt::ReadBufCursor};
 use hyper_util::client::legacy::{
@@ -30,7 +29,7 @@ use hyper_util::client::legacy::{
 use send_wrapper::SendWrapper;
 use tower_service::Service;
 
-use crate::{CompioRuntimeProvider, MIME_APPLICATION_DNS, connect_tcp};
+use crate::CompioRuntimeProvider;
 
 pub async fn connect_https(
     server_name: Arc<str>,
@@ -83,28 +82,10 @@ impl RequestSender {
         request.metadata.id = 0;
         let bytes = request.to_vec()?;
 
-        let mut parts = uri::Parts::default();
-        parts.path_and_query = Some(
-            uri::PathAndQuery::from_str(&path)
-                .map_err(|e| NetError::from(format!("invalid DoH path: {e:?}")))?,
-        );
-        parts.scheme = Some(uri::Scheme::HTTPS);
-        parts.authority = Some(
-            uri::Authority::from_str(&server_name)
-                .map_err(|e| NetError::from(format!("invalid authority: {e:?}")))?,
-        );
+        let request = crate::build_request(&server_name, &path, bytes.len())?;
 
-        let url = Uri::from_parts(parts)
-            .map_err(|e| NetError::from(format!("uri parse error: {e:?}")))?;
-
-        let request = Request::builder()
-            .method("POST")
-            .uri(url)
-            .header(http::header::CONTENT_TYPE, MIME_APPLICATION_DNS)
-            .header(http::header::ACCEPT, MIME_APPLICATION_DNS)
-            .header(http::header::CONTENT_LENGTH, bytes.len())
-            .body(Full::new(Bytes::from(bytes)))
-            .map_err(|e| NetError::from(format!("build request error: {e:?}")))?;
+        let (parts, ()) = request.into_parts();
+        let request = Request::from_parts(parts, Full::new(Bytes::from(bytes)));
 
         let response = client
             .request(request)
@@ -112,59 +93,16 @@ impl RequestSender {
             .map_err(|e| NetError::from(format!("request error: {e:?}")))?;
         let (response, body) = response.into_parts();
 
-        let content_length = response
-            .headers
-            .get(http::header::CONTENT_LENGTH)
-            .map(|v| v.to_str())
-            .transpose()
-            .map_err(|e| NetError::from(format!("bad headers received: {e:?}")))?
-            .map(usize::from_str)
-            .transpose()
-            .map_err(|e| NetError::from(format!("bad headers received: {e:?}")))?;
+        let content_length = crate::get_content_length(&response.headers)?;
 
         let response_bytes = body
             .collect()
             .await
             .map_err(|e| NetError::from(format!("read response body error: {e:?}")))?
-            .to_bytes();
+            .to_bytes()
+            .to_vec();
 
-        if let Some(content_length) = content_length
-            && response_bytes.len() != content_length
-        {
-            return Err(NetError::from(format!(
-                "expected byte length: {}, got: {}",
-                content_length,
-                response_bytes.len()
-            )));
-        }
-
-        if !response.status.is_success() {
-            let error_string = String::from_utf8_lossy(response_bytes.as_ref());
-
-            return Err(NetError::from(format!(
-                "http unsuccessful code: {}, message: {}",
-                response.status, error_string
-            )));
-        } else {
-            let content_type = response
-                .headers
-                .get(http::header::CONTENT_TYPE)
-                .map(|h| {
-                    h.to_str().map_err(|err| {
-                        NetError::from(format!("ContentType header not a string: {err}"))
-                    })
-                })
-                .unwrap_or(Ok(MIME_APPLICATION_DNS))?;
-
-            if content_type != MIME_APPLICATION_DNS {
-                return Err(NetError::from(format!(
-                    "ContentType unsupported (must be '{}'): '{}'",
-                    MIME_APPLICATION_DNS, content_type
-                )));
-            }
-        }
-
-        DnsResponse::from_buffer(response_bytes.to_vec()).map_err(NetError::from)
+        crate::build_response(response, content_length, response_bytes)
     }
 }
 
@@ -247,7 +185,7 @@ impl Service<Uri> for Connector {
         let tls = self.tls.clone();
         let timeout = self.timeout;
         Box::pin(SendWrapper::new(async move {
-            let stream = connect_tcp(remote_addr, bind_addr, Some(timeout)).await?;
+            let stream = crate::connect_tcp(remote_addr, bind_addr, Some(timeout)).await?;
             let stream = TlsConnector::from(tls)
                 .connect(&server_name, stream)
                 .await?;

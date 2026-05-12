@@ -48,12 +48,13 @@ dnssec = ["hickory-resolver/dnssec-ring", "hickory-server/dnssec-ring"]
 __ring = ["compio/ring", "compio/rustls"]
 __tls = ["compio/tls", "__ring"]
 tls = ["__tls", "hickory-resolver/tls-ring", "hickory-server/tls-ring"]
+__http = ["dep:http"]
 https = [
     "tls",
+    "__http",
     "hickory-resolver/https-ring",
     "hickory-server/https-ring",
     "dep:cyper-core",
-    "dep:http",
     "dep:http-body-util",
     "dep:hyper",
     "dep:hyper-util",
@@ -69,8 +70,8 @@ quic = [
 ]
 h3 = [
     "quic",
+    "__http",
     "compio/h3",
-    "dep:http",
     "dep:futures-channel",
     "hickory-resolver/h3-ring",
     "hickory-server/h3-ring",

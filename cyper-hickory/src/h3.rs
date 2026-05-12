@@ -1,7 +1,6 @@
 use std::{
     net::SocketAddr,
     pin::Pin,
-    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
     time::Duration,
@@ -19,10 +18,9 @@ use hickory_net::{
     proto::op::{DnsRequest, DnsResponse},
     xfer::{DnsExchange, DnsRequestSender, DnsResponseStream},
 };
-use http::{Request, Uri, uri};
 use send_wrapper::SendWrapper;
 
-use crate::{CompioRuntimeProvider, MIME_APPLICATION_DNS};
+use crate::CompioRuntimeProvider;
 
 const H3_ALPN: &[u8] = b"h3";
 
@@ -108,28 +106,7 @@ impl H3RequestSender {
         request.metadata.id = 0;
         let bytes = request.to_vec()?;
 
-        let mut parts = uri::Parts::default();
-        parts.path_and_query = Some(
-            uri::PathAndQuery::from_str(&path)
-                .map_err(|e| NetError::from(format!("invalid DoH3 path: {e}")))?,
-        );
-        parts.scheme = Some(uri::Scheme::HTTPS);
-        parts.authority = Some(
-            uri::Authority::from_str(&server_name)
-                .map_err(|e| NetError::from(format!("invalid authority: {e}")))?,
-        );
-
-        let url =
-            Uri::from_parts(parts).map_err(|e| NetError::from(format!("uri parse error: {e}")))?;
-
-        let request = Request::builder()
-            .method("POST")
-            .uri(url)
-            .header(http::header::CONTENT_TYPE, MIME_APPLICATION_DNS)
-            .header(http::header::ACCEPT, MIME_APPLICATION_DNS)
-            .header(http::header::CONTENT_LENGTH, bytes.len())
-            .body(())
-            .map_err(|e| NetError::from(format!("build h3 request error: {e}")))?;
+        let request = crate::build_request(&server_name, &path, bytes.len())?;
 
         let mut stream = send_request
             .send_request(request)
@@ -150,18 +127,9 @@ impl H3RequestSender {
             .recv_response()
             .await
             .map_err(|e| NetError::from(format!("h3 recv response error: {e}")))?;
+        let (resp, ()) = resp.into_parts();
 
-        debug!("got response: {:#?}", resp);
-
-        let content_length = resp
-            .headers()
-            .get(http::header::CONTENT_LENGTH)
-            .map(|v| v.to_str())
-            .transpose()
-            .map_err(|e| NetError::from(format!("bad headers received: {e}")))?
-            .map(usize::from_str)
-            .transpose()
-            .map_err(|e| NetError::from(format!("bad headers received: {e}")))?;
+        let content_length = crate::get_content_length(&resp.headers)?;
 
         let mut response_bytes =
             Vec::with_capacity(content_length.unwrap_or(512).clamp(512, 4_096));
@@ -179,43 +147,7 @@ impl H3RequestSender {
             }
         }
 
-        if let Some(content_length) = content_length
-            && response_bytes.len() != content_length
-        {
-            return Err(NetError::from(format!(
-                "expected byte length: {}, got: {}",
-                content_length,
-                response_bytes.len()
-            )));
-        }
-
-        if !resp.status().is_success() {
-            let error_string = String::from_utf8_lossy(response_bytes.as_ref());
-
-            return Err(NetError::from(format!(
-                "http unsuccessful code: {}, message: {}",
-                resp.status(),
-                error_string
-            )));
-        }
-
-        let content_type = resp
-            .headers()
-            .get(http::header::CONTENT_TYPE)
-            .map(|h| {
-                h.to_str()
-                    .map_err(|e| NetError::from(format!("ContentType header not a string: {e}")))
-            })
-            .unwrap_or(Ok(MIME_APPLICATION_DNS))?;
-
-        if content_type != MIME_APPLICATION_DNS {
-            return Err(NetError::from(format!(
-                "ContentType unsupported (must be '{}'): '{}'",
-                MIME_APPLICATION_DNS, content_type
-            )));
-        }
-
-        DnsResponse::from_buffer(response_bytes).map_err(NetError::from)
+        crate::build_response(resp, content_length, response_bytes)
     }
 }
 
