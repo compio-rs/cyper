@@ -1,6 +1,7 @@
 //! A high level HTTP client based on compio.
 
 #![warn(missing_docs)]
+#![allow(unused_features)]
 #![cfg_attr(feature = "once_cell_try", feature(once_cell_try))]
 #![cfg_attr(
     feature = "impl_trait_in_assoc_type",
