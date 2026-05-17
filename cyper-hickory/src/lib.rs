@@ -19,7 +19,7 @@ use compio::{
     net::{TcpStream, UdpSocket},
     runtime::Runtime,
 };
-use futures_util::{AsyncRead, AsyncWrite};
+use futures_util::{AsyncRead, AsyncWrite, TryFutureExt};
 use hickory_net::{
     NetError,
     runtime::{DnsTcpStream, DnsUdpSocket, RuntimeProvider, Spawn, Time},
@@ -85,10 +85,9 @@ impl RuntimeProvider for CompioRuntimeProvider {
         bind_addr: Option<SocketAddr>,
         timeout: Option<Duration>,
     ) -> Pin<Box<dyn Send + Future<Output = io::Result<Self::Tcp>>>> {
-        Box::pin(SendWrapper::new(async move {
-            let stream = connect_tcp(server_addr, bind_addr, timeout).await?;
-            Ok(CompioStream::new(stream))
-        }))
+        Box::pin(SendWrapper::new(
+            connect_tcp(server_addr, bind_addr, timeout).map_ok(CompioStream::new),
+        ))
     }
 
     fn bind_udp(
@@ -96,10 +95,9 @@ impl RuntimeProvider for CompioRuntimeProvider {
         local_addr: SocketAddr,
         _server_addr: SocketAddr,
     ) -> Pin<Box<dyn Send + Future<Output = io::Result<Self::Udp>>>> {
-        Box::pin(SendWrapper::new(async move {
-            let socket = UdpSocket::bind(local_addr).await?;
-            Ok(CompioUdpSocket::new(socket))
-        }))
+        Box::pin(SendWrapper::new(
+            UdpSocket::bind(local_addr).map_ok(CompioUdpSocket::new),
+        ))
     }
 }
 
@@ -221,15 +219,12 @@ impl DnsUdpSocket for CompioUdpSocket {
     }
 
     async fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
-        SendWrapper::new(async {
-            let buffer = Vec::with_capacity(buf.len());
-            let BufResult(res, buffer) = self.inner.recv_from(buffer).await;
-            let (written, addr) = res?;
-            debug_assert_eq!(written, buffer.len());
-            buf[..written].copy_from_slice(&buffer);
-            Ok((written, addr))
-        })
-        .await
+        let buffer = Vec::with_capacity(buf.len());
+        let BufResult(res, buffer) = SendWrapper::new(self.inner.recv_from(buffer)).await;
+        let (written, addr) = res?;
+        debug_assert_eq!(written, buffer.len());
+        buf[..written].copy_from_slice(&buffer);
+        Ok((written, addr))
     }
 
     fn poll_send_to(
@@ -242,13 +237,10 @@ impl DnsUdpSocket for CompioUdpSocket {
     }
 
     async fn send_to(&self, buf: &[u8], target: SocketAddr) -> io::Result<usize> {
-        SendWrapper::new(async {
-            let buffer = buf.to_vec();
-            let BufResult(res, _) = self.inner.send_to(buffer, target).await;
-            let written = res?;
-            Ok(written)
-        })
-        .await
+        let buffer = buf.to_vec();
+        let BufResult(res, _) = SendWrapper::new(self.inner.send_to(buffer, target)).await;
+        let written = res?;
+        Ok(written)
     }
 }
 
@@ -312,17 +304,14 @@ impl ConnectionProvider for CompioConnectionProvider {
                 let tls = cx.tls.clone();
                 let timeout = cx.options.timeout;
                 let max_active_requests = cx.options.max_active_requests;
-                Ok(Box::pin(SendWrapper::new(async move {
-                    tls::connect_tls(
-                        &server_name,
-                        remote_addr,
-                        bind_addr,
-                        tls,
-                        timeout,
-                        max_active_requests,
-                    )
-                    .await
-                })))
+                Ok(Box::pin(SendWrapper::new(tls::connect_tls(
+                    server_name,
+                    remote_addr,
+                    bind_addr,
+                    tls,
+                    timeout,
+                    max_active_requests,
+                ))))
             }
             #[cfg(feature = "https")]
             ProtocolConfig::Https { server_name, path } => {
@@ -332,10 +321,14 @@ impl ConnectionProvider for CompioConnectionProvider {
                 let bind_addr = config.bind_addr;
                 let tls = cx.tls.clone();
                 let timeout = cx.options.timeout;
-                Ok(Box::pin(SendWrapper::new(async move {
-                    https::connect_https(server_name, path, remote_addr, bind_addr, tls, timeout)
-                        .await
-                })))
+                Ok(Box::pin(SendWrapper::new(https::connect_https(
+                    server_name,
+                    path,
+                    remote_addr,
+                    bind_addr,
+                    tls,
+                    timeout,
+                ))))
             }
             #[cfg(feature = "quic")]
             ProtocolConfig::Quic { server_name } => {
@@ -344,9 +337,13 @@ impl ConnectionProvider for CompioConnectionProvider {
                 let bind_addr = config.bind_addr;
                 let tls = cx.tls.clone();
                 let timeout = cx.options.timeout;
-                Ok(Box::pin(SendWrapper::new(async move {
-                    quic::connect_quic(server_name, remote_addr, bind_addr, tls, timeout).await
-                })))
+                Ok(Box::pin(SendWrapper::new(quic::connect_quic(
+                    server_name,
+                    remote_addr,
+                    bind_addr,
+                    tls,
+                    timeout,
+                ))))
             }
             #[cfg(feature = "h3")]
             ProtocolConfig::H3 {
@@ -361,18 +358,15 @@ impl ConnectionProvider for CompioConnectionProvider {
                 let tls = cx.tls.clone();
                 let timeout = cx.options.timeout;
                 let enable_grease = !disable_grease;
-                Ok(Box::pin(SendWrapper::new(async move {
-                    h3::connect_h3(
-                        server_name,
-                        path,
-                        remote_addr,
-                        bind_addr,
-                        tls,
-                        enable_grease,
-                        timeout,
-                    )
-                    .await
-                })))
+                Ok(Box::pin(SendWrapper::new(h3::connect_h3(
+                    server_name,
+                    path,
+                    remote_addr,
+                    bind_addr,
+                    tls,
+                    enable_grease,
+                    timeout,
+                ))))
             }
         }
     }

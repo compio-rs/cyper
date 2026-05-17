@@ -5,6 +5,7 @@ use std::{
 };
 
 use compio::tls::TlsConnector;
+use futures_util::TryFutureExt;
 use hyper::Uri;
 use send_wrapper::SendWrapper;
 use tower_service::Service;
@@ -60,11 +61,7 @@ impl Service<Uri> for Connector {
             }
         }
 
-        let fut = self.inner.call(dst);
-        Box::pin(async {
-            let stream = fut.await?;
-            Ok(stream.into_wrapped())
-        })
+        Box::pin(self.inner.call(dst).map_ok(|stream| stream.into_wrapped()))
     }
 }
 

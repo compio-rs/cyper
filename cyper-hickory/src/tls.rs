@@ -79,7 +79,7 @@ where
 }
 
 pub async fn connect_tls(
-    server_name: &str,
+    server_name: Arc<str>,
     remote_addr: SocketAddr,
     bind_addr: Option<SocketAddr>,
     tls: ClientConfig,
@@ -89,7 +89,7 @@ pub async fn connect_tls(
     let stream = connect_tcp(remote_addr, bind_addr, Some(timeout)).await?;
     let remote_addr = stream.peer_addr()?;
     let stream = TlsConnector::from(Arc::new(tls))
-        .connect(server_name, stream)
+        .connect(&server_name, stream)
         .await?;
     let (stream, handle) =
         hickory_net::tcp::TcpStream::from_stream(CompioTlsStream::new(stream), remote_addr);

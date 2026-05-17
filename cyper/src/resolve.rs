@@ -1,6 +1,8 @@
 use std::{fmt::Debug, net::IpAddr};
 
-use futures_util::{FutureExt, Stream, StreamExt, future::LocalBoxFuture, stream::LocalBoxStream};
+use futures_util::{
+    FutureExt, Stream, StreamExt, TryFutureExt, future::LocalBoxFuture, stream::LocalBoxStream,
+};
 use http::Uri;
 use send_wrapper::SendWrapper;
 
@@ -51,11 +53,10 @@ impl<T: Resolve> TypeErasedResolve for T {
         &'a self,
         uri: &'a Uri,
     ) -> LocalBoxFuture<'a, Result<LocalBoxStream<'a, IpAddr>, crate::Error>> {
-        async move {
-            let addrs = self.resolve(uri).await.map_err(Into::into)?;
-            Ok::<_, crate::Error>(addrs.boxed_local())
-        }
-        .boxed_local()
+        self.resolve(uri)
+            .map_err(Into::into)
+            .map_ok(|stream| stream.boxed_local())
+            .boxed_local()
     }
 }
 
