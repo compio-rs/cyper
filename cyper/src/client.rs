@@ -470,6 +470,7 @@ pub struct ClientBuilder {
     #[cfg(feature = "cookies")]
     cookies: Option<RwLock<CookieStore>>,
     hickory_dns: bool,
+    http2_only: bool,
 }
 
 impl Default for ClientBuilder {
@@ -493,6 +494,7 @@ impl ClientBuilder {
             #[cfg(feature = "cookies")]
             cookies: None,
             hickory_dns: cfg!(feature = "hickory-dns"),
+            http2_only: false,
         }
     }
 
@@ -524,6 +526,7 @@ impl ClientBuilder {
         };
         let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
             .set_host(true)
+            .http2_only(self.http2_only)
             .timer(CompioTimer)
             .build(Connector::new(tls, resolver.clone(), proxies.clone()));
 
@@ -556,6 +559,12 @@ impl ClientBuilder {
         for (key, value) in headers.iter() {
             self.headers.insert(key, value.clone());
         }
+        self
+    }
+
+    /// Enable HTTP/2 prior knowledge for clear text connections.
+    pub fn http2_prior_knowledge(mut self) -> Self {
+        self.http2_only = true;
         self
     }
 
