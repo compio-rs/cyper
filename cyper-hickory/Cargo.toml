@@ -1,6 +1,6 @@
 [package]
 name = "cyper-hickory"
-version = "0.1.0-rc.1"
+version = "0.1.0"
 description = "HTTP DNS resolver for cyper"
 categories = ["asynchronous", "network-programming"]
 keywords = ["async", "net", "dns"]
