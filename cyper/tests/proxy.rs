@@ -16,7 +16,7 @@ async fn http_proxy() {
     let server = server::http(move |req: Request| async move {
         assert_eq!(req.method(), Method::GET);
         // Through proxy: absolute-form URI
-        assert_eq!(req.uri().to_string(), format!("http://cyper.local/prox"));
+        assert_eq!(req.uri().to_string(), "http://cyper.local/prox");
         assert_eq!(req.headers()["host"], "cyper.local");
         "OK"
     })
@@ -42,7 +42,7 @@ async fn http_proxy() {
 async fn http_proxy_basic_auth() {
     let server = server::http(move |req: Request| async move {
         assert_eq!(req.method(), Method::GET);
-        assert_eq!(req.uri().to_string(), format!("http://cyper.local/prox"));
+        assert_eq!(req.uri().to_string(), "http://cyper.local/prox");
         assert_eq!(req.headers()["host"], "cyper.local");
         assert_eq!(
             req.headers()["proxy-authorization"],
@@ -76,7 +76,7 @@ async fn http_proxy_basic_auth() {
 async fn http_proxy_basic_auth_parsed() {
     let server = server::http(move |req: Request| async move {
         assert_eq!(req.method(), Method::GET);
-        assert_eq!(req.uri().to_string(), format!("http://cyper.local/prox"));
+        assert_eq!(req.uri().to_string(), "http://cyper.local/prox");
         assert_eq!(req.headers()["host"], "cyper.local");
         assert_eq!(
             req.headers()["proxy-authorization"],
@@ -106,7 +106,7 @@ async fn http_proxy_basic_auth_parsed() {
 async fn http_proxy_custom_auth_header() {
     let server = server::http(move |req: Request| async move {
         assert_eq!(req.method(), Method::GET);
-        assert_eq!(req.uri().to_string(), format!("http://cyper.local/prox"));
+        assert_eq!(req.uri().to_string(), "http://cyper.local/prox");
         assert_eq!(req.headers()["proxy-authorization"], "testme");
         "OK"
     })
@@ -265,7 +265,7 @@ async fn proxy_https_matches_https_only() {
 async fn proxy_multiple_matches_correct() {
     let server = server::http(move |req: Request| async move {
         assert_eq!(req.method(), Method::GET);
-        assert_eq!(req.uri().to_string(), format!("http://cyper.local/prox"));
+        assert_eq!(req.uri().to_string(), "http://cyper.local/prox");
         "OK"
     })
     .await;
