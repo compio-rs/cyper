@@ -524,11 +524,13 @@ impl ClientBuilder {
                 true => unreachable!("hickory-dns shouldn't be enabled unless the feature is"),
             },
         };
-        let client = hyper_util::client::legacy::Client::builder(CompioExecutor)
-            .set_host(true)
-            .http2_only(self.http2_only)
-            .timer(CompioTimer)
-            .build(Connector::new(tls, resolver.clone(), proxies.clone()));
+        let mut builder = hyper_util::client::legacy::Client::builder(CompioExecutor);
+        builder.set_host(true).timer(CompioTimer);
+        #[cfg(feature = "http2")]
+        {
+            builder.http2_only(self.http2_only);
+        }
+        let client = builder.build(Connector::new(tls, resolver.clone(), proxies.clone()));
 
         let proxies_maybe_http_auth = proxies.iter().any(|p| p.maybe_has_http_auth());
         let proxies_maybe_http_custom_headers =
