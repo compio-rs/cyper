@@ -46,7 +46,12 @@ compio = { workspace = true, default-features = true, features = [
     "ws",
 ] }
 futures-channel = { workspace = true }
+criterion = "0.8.2"
 
 [[test]]
 name = "ws"
 required-features = ["ws"]
+
+[[bench]]
+name = "comparison"
+harness = false

@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
     io,
-    mem::MaybeUninit,
     pin::Pin,
     task::{Context, Poll, ready},
 };
@@ -54,12 +53,11 @@ where
         cx: &mut Context<'_>,
         mut buf: hyper::rt::ReadBufCursor<'_>,
     ) -> Poll<io::Result<()>> {
-        let uninit = unsafe { buf.as_mut() };
-        uninit.fill(MaybeUninit::new(0));
+        let uninit = buf.initialize_unfilled();
         let res = ready!(futures_util::AsyncRead::poll_read(
             Pin::new(&mut *self.0),
             cx,
-            unsafe { uninit.assume_init_mut() }
+            uninit,
         ))?;
         unsafe { buf.advance(res) };
         Poll::Ready(Ok(()))

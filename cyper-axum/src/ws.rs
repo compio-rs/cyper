@@ -467,9 +467,9 @@ mod compat {
             cx: &mut Context<'_>,
             buf: &mut [u8],
         ) -> Poll<io::Result<usize>> {
-            let mut read_buf = hyper::rt::ReadBuf::uninit(unsafe {
-                std::slice::from_raw_parts_mut(buf.as_mut_ptr().cast(), buf.len())
-            });
+            // Since `buf` is fully initialized, we use `ReadBuf::new` to store that info in the
+            // `init` field of `ReadBuf`.
+            let mut read_buf = hyper::rt::ReadBuf::new(buf);
             ready!(hyper::rt::Read::poll_read(
                 Pin::new(&mut self.0),
                 cx,
