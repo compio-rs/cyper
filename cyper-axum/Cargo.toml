@@ -41,12 +41,15 @@ all = ["http2", "ws"]
 nightly = ["cyper-core/nightly"]
 
 [dev-dependencies]
+axum = { workspace = true, features = ["tokio", "ws"] }
 compio = { workspace = true, default-features = true, features = [
     "macros",
     "ws",
 ] }
 futures-channel = { workspace = true }
 criterion = "0.8.2"
+tokio = { version = "1", features = ["net", "rt"] }
+tokio-tungstenite = "0.30.0"
 
 [[test]]
 name = "ws"
@@ -55,3 +58,8 @@ required-features = ["ws"]
 [[bench]]
 name = "comparison"
 harness = false
+
+[[bench]]
+name = "ws_latency"
+harness = false
+required-features = ["ws"]
