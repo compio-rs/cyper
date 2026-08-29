@@ -4,6 +4,9 @@
 //! that work with the compio runtime, as a replacement for `axum::extract::ws`
 //! which depends on tokio.
 //!
+//! Both types and parts of the documentation here are adapted from
+//! `axum::extract::ws`, MIT licensed, Copyright (c) 2019 axum Contributors.
+//!
 //! # Example
 //!
 //! ```
