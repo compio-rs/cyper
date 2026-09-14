@@ -13,7 +13,7 @@ use send_wrapper::SendWrapper;
 #[derive(Debug, Default, Clone)]
 pub struct CompioExecutor;
 
-impl<F: Future<Output = ()> + Send + 'static> Executor<F> for CompioExecutor {
+impl<F: Future<Output = ()> + 'static> Executor<F> for CompioExecutor {
     fn execute(&self, fut: F) {
         compio::runtime::spawn(fut).detach();
     }
