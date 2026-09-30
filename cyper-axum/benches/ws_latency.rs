@@ -36,6 +36,7 @@ use cyper_axum::ws::{
 };
 use futures_channel::oneshot;
 use futures_util::{SinkExt, StreamExt, future::join_all};
+use socket2::Socket;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream as TokioWebSocketStream, connect_async,
     tungstenite::{Bytes as TokioBytes, Message as TokioMessage},
@@ -273,7 +274,7 @@ async fn tokio_round_trips(
 }
 
 async fn compio_round_trips(
-    ws: &mut CompioWebSocketStream<TcpStream>,
+    ws: &mut CompioWebSocketStream<Socket>,
     message: &mut CompioMessage,
     count: usize,
     latencies: &mut Vec<u64>,

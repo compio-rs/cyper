@@ -31,6 +31,7 @@ hyper-util = { workspace = true, optional = true, features = [
     "http2",
 ] }
 quinn = { version = "0.11", default-features = false }
+socket2 = { workspace = true, optional = true }
 tower-service = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -59,6 +60,7 @@ https = [
     "dep:http-body-util",
     "dep:hyper",
     "dep:hyper-util",
+    "dep:socket2",
     "dep:tower-service",
 ]
 __quic = ["__ring", "compio/quic"]

@@ -36,7 +36,7 @@ nyquest-interface = { version = "0.4.0", optional = true }
 rustls-platform-verifier = { workspace = true, optional = true }
 
 async-stream = "0.3"
-base64 = "0.22"
+base64 = { workspace = true }
 cfg-if = { workspace = true }
 compression-codecs = { version = "0.4", optional = true }
 cookie_store = { version = "0.22", optional = true }
@@ -65,7 +65,7 @@ rustls = { workspace = true, features = ["ring"] }
 nyquest = "0.4.0"
 
 axum = { workspace = true }
-brotli_crate = { package = "brotli", version = "8" }
+brotli_crate = { package = "brotli", version = "9" }
 clap = { version = "4", features = ["derive"] }
 cookie = "0.18"
 flate2 = "1"
@@ -73,7 +73,7 @@ futures-channel = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 time = "0.3"
 tower = { workspace = true }
-zstd_crate = { package = "zstd", version = "0.13" }
+zstd_crate = { package = "zstd", version = "0.14" }
 
 [build-dependencies]
 cfg_aliases = { workspace = true }

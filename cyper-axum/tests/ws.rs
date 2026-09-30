@@ -4,6 +4,7 @@ use axum::{Router, response::Response, routing::any};
 use compio::{net::TcpListener, ws::tungstenite::Message as TsMessage};
 use cyper_axum::ws::{Message, WebSocket, WebSocketUpgrade};
 use futures_channel::oneshot;
+use socket2::Socket;
 
 // ===== Helpers =====
 
@@ -31,7 +32,7 @@ async fn spawn_server(app: Router) -> (SocketAddr, oneshot::Sender<()>) {
 }
 
 /// Connect a compio-ws client to the given address at `/ws`.
-async fn connect(addr: SocketAddr) -> compio::ws::WebSocketStream<compio::net::TcpStream> {
+async fn connect(addr: SocketAddr) -> compio::ws::WebSocketStream<Socket> {
     let stream = compio::net::TcpStream::connect(addr).await.unwrap();
     let (ws, _resp) = compio::ws::client_async(format!("ws://{addr}/ws"), stream)
         .await

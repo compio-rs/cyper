@@ -27,15 +27,16 @@ use std::{
 use axum::{Router, handler::HandlerService, routing::MethodRouter};
 use axum_core::{body::Body, extract::Request, response::Response};
 use compio::{
-    io::{AsyncRead, AsyncWrite, util::Splittable},
-    net::{TcpListener, TcpStream, UnixListener, UnixStream},
+    net::{TcpListener, UnixListener},
+    runtime::fd::PollFd,
 };
 use compio_log::*;
 use cyper_core::{CompioExecutor, HyperStream};
-use futures_util::{FutureExt, pin_mut};
+use futures_util::{AsyncRead, AsyncWrite, FutureExt, pin_mut};
 use hyper::body::Incoming;
 use hyper_util::{server::conn::auto::Builder, service::TowerToHyperService};
 use send_wrapper::SendWrapper;
+use socket2::Socket;
 // hyper crate also uses tokio channels. Use them here for consistency with axum.
 use tokio::sync::watch;
 use tower::ServiceExt as _;
@@ -44,7 +45,7 @@ use tower_service::Service;
 /// Types that can listen for connections.
 pub trait Listener: 'static {
     /// The listener's IO type.
-    type Io: Splittable + 'static;
+    type Io: AsyncRead + AsyncWrite + Unpin + 'static;
 
     /// The listener's address type.
     type Addr;
@@ -66,11 +67,15 @@ pub trait Listener: 'static {
 
 impl Listener for TcpListener {
     type Addr = SocketAddr;
-    type Io = TcpStream;
+    type Io = PollFd<Socket>;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         loop {
-            match Self::accept(self).await {
+            match Self::accept(self).await.and_then(|(io, addr)| {
+                io.into_poll_fd()
+                    .and_then(|io| io.set_nonblocking(true).map(|_| io))
+                    .map(|poll_fd| (poll_fd, addr))
+            }) {
                 Ok(tup) => return tup,
                 Err(e) => handle_accept_error(e).await,
             }
@@ -80,42 +85,19 @@ impl Listener for TcpListener {
     fn local_addr(&self) -> io::Result<Self::Addr> {
         Self::local_addr(self)
     }
-
-    fn into_hyper_stream(io: Self::Io) -> HyperStream<Self::Io> {
-        // Reuse the socket's shared descriptor instead of duplicating it, so
-        // hyper writes to the socket directly rather than through the
-        // Compio-to-futures adapter and its intermediate buffer. Vectored
-        // writes and TCP half-close are preserved.
-        //
-        // The non-blocking flag belongs to the socket, so every handle to it
-        // observes the change. Set it while the just-accepted `io` is the only
-        // handle and no `PollFd` exists yet. On failure `io` is untouched and
-        // the buffered path still works.
-        match socket2::SockRef::from(&io)
-            .set_nonblocking(true)
-            .and_then(|()| io.to_poll_fd())
-        {
-            Ok(poll_fd) => {
-                // `poll_fd` shares the descriptor with `io`. Release `io` here so the
-                // readiness path owns the only remaining handle to it.
-                drop(io);
-                HyperStream::new_plain_compat(poll_fd, true)
-            }
-            Err(error) => {
-                warn!("failed to enable readiness-based TCP IO; using buffered IO: {error}");
-                HyperStream::new_plain(io)
-            }
-        }
-    }
 }
 
 impl Listener for UnixListener {
     type Addr = socket2::SockAddr;
-    type Io = UnixStream;
+    type Io = PollFd<Socket>;
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         loop {
-            match Self::accept(self).await {
+            match Self::accept(self).await.and_then(|(io, addr)| {
+                io.into_poll_fd()
+                    .and_then(|io| io.set_nonblocking(true).map(|_| io))
+                    .map(|poll_fd| (poll_fd, addr))
+            }) {
                 Ok(tup) => return tup,
                 Err(e) => handle_accept_error(e).await,
             }
@@ -292,8 +274,6 @@ where
     L: Listener,
     M: for<'a> Service<IncomingStream<'a, L>, Error = Infallible, Response = S> + 'static,
     S: Service<Request, Response = Response, Error = Infallible> + Clone + 'static,
-    <<L as Listener>::Io as Splittable>::ReadHalf: AsyncRead + Unpin,
-    <<L as Listener>::Io as Splittable>::WriteHalf: AsyncWrite + Unpin,
 {
     type IntoFuture = ServeFuture;
     type Output = io::Result<()>;
@@ -333,10 +313,7 @@ where
                     #[cfg(feature = "http2")]
                     builder.http2().enable_connect_protocol();
                     match builder
-                        .serve_connection_with_upgrades(
-                            Box::pin(io),
-                            ServiceSendWrapper::new(hyper_service),
-                        )
+                        .serve_connection_with_upgrades(io, ServiceSendWrapper::new(hyper_service))
                         .await
                     {
                         Ok(()) => {}
@@ -403,8 +380,6 @@ where
     M: for<'a> Service<IncomingStream<'a, L>, Error = Infallible, Response = S> + 'static,
     S: Service<Request, Response = Response, Error = Infallible> + Clone + 'static,
     F: Future<Output = ()> + 'static,
-    <<L as Listener>::Io as Splittable>::ReadHalf: AsyncRead + Unpin,
-    <<L as Listener>::Io as Splittable>::WriteHalf: AsyncWrite + Unpin,
 {
     type IntoFuture = ServeFuture;
     type Output = io::Result<()>;
@@ -465,10 +440,8 @@ where
 
                 compio::runtime::spawn(async move {
                     let builder = Builder::new(CompioExecutor);
-                    let conn = builder.serve_connection_with_upgrades(
-                        Box::pin(io),
-                        ServiceSendWrapper::new(hyper_service),
-                    );
+                    let conn = builder
+                        .serve_connection_with_upgrades(io, ServiceSendWrapper::new(hyper_service));
                     pin_mut!(conn);
 
                     let signal_closed = signal_tx.closed().fuse();
@@ -596,8 +569,8 @@ where
     }
 
     fn call(&mut self, _req: IncomingStream<'_, L>) -> Self::Future {
-        // call `Router::with_state` such that everything is turned into `Route` eagerly
-        // rather than doing that per request
+        // call `Router::with_state` such that everything is turned into `Route`
+        // eagerly rather than doing that per request
         std::future::ready(Ok(self.clone().with_state(())))
     }
 }
@@ -642,10 +615,9 @@ mod tests {
             .set_read_timeout(Some(Duration::from_secs(2)))
             .unwrap();
         let (server, _) = listener.accept().await.unwrap();
-        let poll_fd = server.to_poll_fd().unwrap();
+        let poll_fd = server.into_poll_fd().unwrap();
         poll_fd.set_nonblocking(true).unwrap();
-        drop(server);
-        let mut stream = HyperStream::<TcpStream>::new_plain_compat(poll_fd, true);
+        let mut stream = HyperStream::new_plain(poll_fd);
 
         assert!(hyper::rt::Write::is_write_vectored(&stream));
         let bufs = [IoSlice::new(b"hello "), IoSlice::new(b"world")];

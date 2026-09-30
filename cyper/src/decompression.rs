@@ -23,7 +23,7 @@ impl<D: DecodeV2> Decoder<D> {
     }
 
     fn decode_impl(&mut self, data: &[u8], buffer: &mut Vec<u8>) -> io::Result<usize> {
-        use compio::buf::SetLen;
+        use compio::buf::SetLenExt;
 
         if data.is_empty() {
             return Ok(0);
@@ -61,8 +61,9 @@ impl<D: DecodeV2> Decoder<D> {
                     }
                 }
                 Err(_) if input.written_len() >= data.len() => {
-                    // We've consumed all input but haven't produced output. This can happen
-                    // with some codecs when the input is incomplete. We'll wait for more data
+                    // We've consumed all input but haven't produced output.
+                    // This can happen with some codecs when
+                    // the input is incomplete. We'll wait for more data
                     // to arrive before trying again.
                     break;
                 }
