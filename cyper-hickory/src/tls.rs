@@ -8,7 +8,6 @@ use std::{
 };
 
 use compio::{
-    io::util::Splittable,
     rustls::ClientConfig,
     tls::{TlsConnector, TlsStream},
 };
@@ -22,11 +21,11 @@ use send_wrapper::SendWrapper;
 
 use crate::{CompioRuntimeProvider, CompioTimer, connect_tcp};
 
-pub struct CompioTlsStream<S: Splittable> {
+pub struct CompioTlsStream<S> {
     inner: SendWrapper<TlsStream<S>>,
 }
 
-impl<S: Splittable> CompioTlsStream<S> {
+impl<S> CompioTlsStream<S> {
     fn new(stream: TlsStream<S>) -> Self {
         Self {
             inner: SendWrapper::new(stream),
@@ -34,19 +33,11 @@ impl<S: Splittable> CompioTlsStream<S> {
     }
 }
 
-impl<S: Splittable + 'static> DnsTcpStream for CompioTlsStream<S>
-where
-    S::ReadHalf: compio::io::AsyncRead + Unpin,
-    S::WriteHalf: compio::io::AsyncWrite + Unpin,
-{
+impl<S: AsyncRead + AsyncWrite + Unpin + 'static> DnsTcpStream for CompioTlsStream<S> {
     type Time = CompioTimer;
 }
 
-impl<S: Splittable + 'static> AsyncRead for CompioTlsStream<S>
-where
-    S::ReadHalf: compio::io::AsyncRead + Unpin,
-    S::WriteHalf: compio::io::AsyncWrite + Unpin,
-{
+impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for CompioTlsStream<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -56,11 +47,7 @@ where
     }
 }
 
-impl<S: Splittable + 'static> AsyncWrite for CompioTlsStream<S>
-where
-    S::ReadHalf: compio::io::AsyncRead + Unpin,
-    S::WriteHalf: compio::io::AsyncWrite + Unpin,
-{
+impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for CompioTlsStream<S> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -89,7 +76,7 @@ pub async fn connect_tls(
     let stream = connect_tcp(remote_addr, bind_addr, Some(timeout)).await?;
     let remote_addr = stream.peer_addr()?;
     let stream = TlsConnector::from(Arc::new(tls))
-        .connect(&server_name, stream)
+        .connect(&server_name, stream.into_poll_fd()?)
         .await?;
     let (stream, handle) =
         hickory_net::tcp::TcpStream::from_stream(CompioTlsStream::new(stream), remote_addr);

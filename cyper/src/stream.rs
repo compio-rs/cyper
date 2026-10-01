@@ -5,26 +5,18 @@ use std::{
     task::{Context, Poll, ready},
 };
 
-use compio::{
-    BufResult,
-    buf::{IoBuf, IoBufMut, IoVectoredBuf},
-    io::{AsyncRead, AsyncWrite, util::Splittable},
-    net::TcpStream,
-    tls::TlsConnector,
-};
+use compio::{net::TcpStream, runtime::fd::PollFd, tls::TlsConnector};
 use cyper_core::HyperStream;
-use futures_util::StreamExt;
+use futures_util::{AsyncRead, AsyncWrite, StreamExt};
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
+use socket2::Socket;
 
 use crate::{Error, Result, resolve::SharedResolver};
 
 /// A HTTP stream wrapper, based on compio, and exposes [`hyper::rt`]
 /// interfaces.
-pub struct HttpStream<S = TcpStream>
-where
-    S: Splittable,
-{
+pub struct HttpStream<S = PollFd<Socket>> {
     inner: HyperStream<S>,
     is_proxy: bool,
     is_h2: bool,
@@ -52,14 +44,14 @@ impl HttpStream {
                 let stream = Self::connect_tcp(&uri, host, port, resolver).await?;
                 // Ignore it.
                 let _tls = tls;
-                HyperStream::new_plain(stream)
+                HyperStream::new_plain(stream.into_poll_fd()?)
             }
             #[cfg(tls)]
             "https" => {
                 let port = port.unwrap_or(443);
                 let stream = Self::connect_tcp(&uri, host, port, resolver).await?;
                 let connector = tls.ok_or_else(|| Error::NoTlsBackend)?;
-                HyperStream::new_tls(connector.connect(host, stream).await?)
+                HyperStream::new_tls(connector.connect(host, stream.into_poll_fd()?).await?)
             }
             _ => return Err(Error::BadScheme(scheme.to_string())),
         };
@@ -111,11 +103,7 @@ impl HttpStream<HttpStream> {
 }
 
 #[cfg(tls)]
-impl<S: Splittable + 'static> HttpStream<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
+impl<S: AsyncRead + AsyncWrite + Unpin> HttpStream<S> {
     pub async fn connect_with_https(
         stream: S,
         uri: Uri,
@@ -141,11 +129,7 @@ where
     }
 }
 
-impl<S: Splittable + 'static> hyper::rt::Read for HttpStream<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
+impl<S: AsyncRead + AsyncWrite + Unpin> hyper::rt::Read for HttpStream<S> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -161,21 +145,35 @@ where
         // In HTTP/2 the stream is split, so this combined poll_read
         // is not called and concurrent reads/writes are unaffected.
         ready!(hyper::rt::Write::poll_flush(Pin::new(&mut self.inner), cx))?;
-        Pin::new(&mut self.inner).poll_read(cx, buf)
+        hyper::rt::Read::poll_read(Pin::new(&mut self.inner), cx, buf)
     }
 }
 
-impl<S: Splittable + 'static> hyper::rt::Write for HttpStream<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
+impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for HttpStream<S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        futures_util::AsyncRead::poll_read(Pin::new(&mut self.inner), cx, buf)
+    }
+
+    fn poll_read_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &mut [io::IoSliceMut<'_>],
+    ) -> Poll<io::Result<usize>> {
+        futures_util::AsyncRead::poll_read_vectored(Pin::new(&mut self.inner), cx, bufs)
+    }
+}
+
+impl<S: AsyncRead + AsyncWrite + Unpin> hyper::rt::Write for HttpStream<S> {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.inner).poll_write(cx, buf)
+        hyper::rt::Write::poll_write(Pin::new(&mut self.inner), cx, buf)
     }
 
     fn poll_write_vectored(
@@ -183,7 +181,7 @@ where
         cx: &mut Context<'_>,
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.inner).poll_write_vectored(cx, bufs)
+        hyper::rt::Write::poll_write_vectored(Pin::new(&mut self.inner), cx, bufs)
     }
 
     fn is_write_vectored(&self) -> bool {
@@ -191,19 +189,41 @@ where
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.inner).poll_flush(cx)
+        hyper::rt::Write::poll_flush(Pin::new(&mut self.inner), cx)
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.inner).poll_shutdown(cx)
+        hyper::rt::Write::poll_shutdown(Pin::new(&mut self.inner), cx)
     }
 }
 
-impl<S: Splittable + 'static> Connection for HttpStream<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
+impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for HttpStream<S> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        futures_util::AsyncWrite::poll_write(Pin::new(&mut self.inner), cx, buf)
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        futures_util::AsyncWrite::poll_write_vectored(Pin::new(&mut self.inner), cx, bufs)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        futures_util::AsyncWrite::poll_flush(Pin::new(&mut self.inner), cx)
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        futures_util::AsyncWrite::poll_close(Pin::new(&mut self.inner), cx)
+    }
+}
+
+impl<S: AsyncRead + AsyncWrite + Unpin> Connection for HttpStream<S> {
     fn connected(&self) -> Connected {
         let conn = Connected::new().proxy(self.is_proxy);
         if self.is_h2 {
@@ -214,64 +234,7 @@ where
     }
 }
 
-impl<S: Splittable + 'static> Splittable for HttpStream<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
-    type ReadHalf = HttpStreamReadHalf<S>;
-    type WriteHalf = HttpStreamWriteHalf<S>;
-
-    fn split(self) -> (Self::ReadHalf, Self::WriteHalf) {
-        let (read, write) = futures_util::AsyncReadExt::split(self.inner);
-        (HttpStreamReadHalf(read), HttpStreamWriteHalf(write))
-    }
-}
-
-pub struct HttpStreamReadHalf<S: Splittable>(futures_util::io::ReadHalf<HyperStream<S>>);
-
-impl<S: Splittable + 'static> AsyncRead for HttpStreamReadHalf<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
-    async fn read<B: IoBufMut>(&mut self, mut buf: B) -> BufResult<usize, B> {
-        let res = futures_util::AsyncReadExt::read(&mut self.0, buf.ensure_init()).await;
-        if let Ok(len) = &res {
-            unsafe { buf.set_len(*len) };
-        }
-        BufResult(res, buf)
-    }
-}
-
-pub struct HttpStreamWriteHalf<S: Splittable>(futures_util::io::WriteHalf<HyperStream<S>>);
-
-impl<S: Splittable + 'static> AsyncWrite for HttpStreamWriteHalf<S>
-where
-    S::ReadHalf: AsyncRead + Unpin,
-    S::WriteHalf: AsyncWrite + Unpin,
-{
-    async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let slice = buf.as_init();
-        let res = futures_util::AsyncWriteExt::write(&mut self.0, slice).await;
-        BufResult(res, buf)
-    }
-
-    async fn write_vectored<T: IoVectoredBuf>(&mut self, buf: T) -> BufResult<usize, T> {
-        let slices = buf.iter_slice().map(io::IoSlice::new).collect::<Vec<_>>();
-        let res = futures_util::AsyncWriteExt::write_vectored(&mut self.0, &slices).await;
-        BufResult(res, buf)
-    }
-
-    async fn flush(&mut self) -> io::Result<()> {
-        futures_util::AsyncWriteExt::flush(&mut self.0).await
-    }
-
-    async fn shutdown(&mut self) -> io::Result<()> {
-        futures_util::AsyncWriteExt::close(&mut self.0).await
-    }
-}
-
+#[allow(clippy::large_enum_variant)]
 pub enum WrappedHttpStream {
     Plain(HttpStream),
     #[cfg(tls)]
@@ -285,9 +248,9 @@ impl hyper::rt::Read for WrappedHttpStream {
         buf: hyper::rt::ReadBufCursor<'_>,
     ) -> Poll<io::Result<()>> {
         match &mut *self {
-            WrappedHttpStream::Plain(s) => Pin::new(s).poll_read(cx, buf),
+            WrappedHttpStream::Plain(s) => hyper::rt::Read::poll_read(Pin::new(s), cx, buf),
             #[cfg(tls)]
-            WrappedHttpStream::Embedded(s) => Pin::new(s).poll_read(cx, buf),
+            WrappedHttpStream::Embedded(s) => hyper::rt::Read::poll_read(Pin::new(s), cx, buf),
         }
     }
 }
@@ -299,9 +262,9 @@ impl hyper::rt::Write for WrappedHttpStream {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         match &mut *self {
-            WrappedHttpStream::Plain(s) => Pin::new(s).poll_write(cx, buf),
+            WrappedHttpStream::Plain(s) => hyper::rt::Write::poll_write(Pin::new(s), cx, buf),
             #[cfg(tls)]
-            WrappedHttpStream::Embedded(s) => Pin::new(s).poll_write(cx, buf),
+            WrappedHttpStream::Embedded(s) => hyper::rt::Write::poll_write(Pin::new(s), cx, buf),
         }
     }
 
@@ -311,9 +274,13 @@ impl hyper::rt::Write for WrappedHttpStream {
         bufs: &[io::IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
         match &mut *self {
-            WrappedHttpStream::Plain(s) => Pin::new(s).poll_write_vectored(cx, bufs),
+            WrappedHttpStream::Plain(s) => {
+                hyper::rt::Write::poll_write_vectored(Pin::new(s), cx, bufs)
+            }
             #[cfg(tls)]
-            WrappedHttpStream::Embedded(s) => Pin::new(s).poll_write_vectored(cx, bufs),
+            WrappedHttpStream::Embedded(s) => {
+                hyper::rt::Write::poll_write_vectored(Pin::new(s), cx, bufs)
+            }
         }
     }
 
@@ -327,9 +294,9 @@ impl hyper::rt::Write for WrappedHttpStream {
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match &mut *self {
-            WrappedHttpStream::Plain(s) => Pin::new(s).poll_flush(cx),
+            WrappedHttpStream::Plain(s) => hyper::rt::Write::poll_flush(Pin::new(s), cx),
             #[cfg(tls)]
-            WrappedHttpStream::Embedded(s) => Pin::new(s).poll_flush(cx),
+            WrappedHttpStream::Embedded(s) => hyper::rt::Write::poll_flush(Pin::new(s), cx),
         }
     }
 

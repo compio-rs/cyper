@@ -8,7 +8,7 @@ use std::{
 };
 
 use compio::{
-    net::TcpStream,
+    runtime::fd::PollFd,
     rustls::ClientConfig,
     tls::{TlsConnector, TlsStream},
 };
@@ -27,6 +27,7 @@ use hyper_util::client::legacy::{
     connect::{Connected, Connection},
 };
 use send_wrapper::SendWrapper;
+use socket2::Socket;
 use tower_service::Service;
 
 use crate::CompioRuntimeProvider;
@@ -187,7 +188,7 @@ impl Service<Uri> for Connector {
         Box::pin(SendWrapper::new(async move {
             let stream = crate::connect_tcp(remote_addr, bind_addr, Some(timeout)).await?;
             let stream = TlsConnector::from(tls)
-                .connect(&server_name, stream)
+                .connect(&server_name, stream.into_poll_fd()?)
                 .await?;
             Ok(HttpStream::new(stream))
         }))
@@ -195,11 +196,11 @@ impl Service<Uri> for Connector {
 }
 
 struct HttpStream {
-    inner: HyperStream<TcpStream>,
+    inner: HyperStream<PollFd<Socket>>,
 }
 
 impl HttpStream {
-    pub fn new(stream: TlsStream<TcpStream>) -> Self {
+    pub fn new(stream: TlsStream<PollFd<Socket>>) -> Self {
         Self {
             inner: HyperStream::new_tls(stream),
         }

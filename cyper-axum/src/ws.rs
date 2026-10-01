@@ -49,6 +49,7 @@ use async_tungstenite::{
     tungstenite::{self as ts, protocol::WebSocketConfig},
 };
 use axum_core::{body::Body, extract::FromRequestParts, response::Response};
+use compio::runtime::fd::PollFd;
 use cyper_core::HyperStream;
 use futures_util::StreamExt;
 use hyper::{
@@ -57,6 +58,7 @@ use hyper::{
     http::request::Parts,
 };
 use sha1::{Digest, Sha1};
+use socket2::Socket;
 // Re-export tungstenite types for convenience.
 pub use ts::protocol::frame::coding::CloseCode;
 pub use ts::{Bytes, Message, Utf8Bytes, protocol::CloseFrame};
@@ -301,7 +303,7 @@ impl<F> WebSocketUpgrade<F> {
             };
 
             let upgraded = match hyper_util::server::conn::auto::upgrade::downcast::<
-                Pin<Box<HyperStream<compio::net::TcpStream>>>,
+                HyperStream<PollFd<Socket>>,
             >(upgraded)
             {
                 Ok(parts) => UpgradedIo::Direct(RewindIo::new(parts.io, parts.read_buf)),
@@ -462,8 +464,9 @@ fn sign(key: &[u8]) -> HeaderValue {
     HeaderValue::from_maybe_shared(b64).expect("base64 is a valid value")
 }
 
-type DirectIo = RewindIo<Pin<Box<HyperStream<compio::net::TcpStream>>>>;
+type DirectIo = RewindIo<HyperStream<PollFd<Socket>>>;
 
+#[allow(clippy::large_enum_variant)]
 enum UpgradedIo {
     Direct(DirectIo),
     Fallback(FuturesIo<hyper::upgrade::Upgraded>),
@@ -594,8 +597,8 @@ mod compat {
             cx: &mut Context<'_>,
             buf: &mut [u8],
         ) -> Poll<io::Result<usize>> {
-            // Since `buf` is fully initialized, we use `ReadBuf::new` to store that info in
-            // the `init` field of `ReadBuf`.
+            // Since `buf` is fully initialized, we use `ReadBuf::new` to store
+            // that info in the `init` field of `ReadBuf`.
             let mut read_buf = hyper::rt::ReadBuf::new(buf);
             ready!(hyper::rt::Read::poll_read(
                 Pin::new(&mut self.0),
@@ -643,8 +646,8 @@ mod tests {
     fn websocket_is_send() {
         fn assert_send<T: Send>() {}
 
-        // `SendWrapper` enforces thread affinity at runtime and will panic if the
-        // WebSocket is accessed or dropped from a different thread.
+        // `SendWrapper` enforces thread affinity at runtime and will panic if
+        // the WebSocket is accessed or dropped from a different thread.
         assert_send::<WebSocket>();
     }
 
@@ -665,71 +668,6 @@ mod tests {
                     }
                 }
             })
-        }
-
-        #[compio::test]
-        async fn tcp_upgrade_uses_compat_io() {
-            use std::sync::{
-                Arc,
-                atomic::{AtomicBool, Ordering},
-            };
-
-            use compio::ws::tungstenite::Message as ClientMessage;
-
-            let uses_compat_io = Arc::new(AtomicBool::new(false));
-            let observed = Arc::clone(&uses_compat_io);
-            let app = Router::new().route(
-                "/ws",
-                any(move |ws: WebSocketUpgrade| {
-                    let observed = Arc::clone(&observed);
-                    async move {
-                        ws.on_upgrade(move |mut socket| async move {
-                            observed.store(
-                                matches!(
-                                    socket.inner.get_ref(),
-                                    UpgradedIo::Direct(io)
-                                        if io.inner.as_ref().get_ref().uses_compat_io()
-                                ),
-                                Ordering::SeqCst,
-                            );
-                            if let Some(Ok(message)) = socket.recv().await {
-                                socket.send(message).await.unwrap();
-                            }
-                        })
-                    }
-                }),
-            );
-            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0u16))
-                .await
-                .unwrap();
-            let addr = listener.local_addr().unwrap();
-            let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-            compio::runtime::spawn(async move {
-                crate::serve(listener, app)
-                    .with_graceful_shutdown(async move {
-                        shutdown_rx.await.ok();
-                    })
-                    .await
-                    .unwrap();
-            })
-            .detach();
-
-            let stream = TcpStream::connect(addr).await.unwrap();
-            let (mut client, _) = compio::ws::client_async(format!("ws://{addr}/ws"), stream)
-                .await
-                .unwrap();
-            client
-                .send(ClientMessage::Text("probe".into()))
-                .await
-                .unwrap();
-            assert_eq!(
-                client.read().await.unwrap(),
-                ClientMessage::Text("probe".into())
-            );
-            assert!(uses_compat_io.load(Ordering::SeqCst));
-
-            client.close(None).await.ok();
-            drop(shutdown_tx);
         }
 
         /// The client sends the upgrade request and the first WebSocket frame

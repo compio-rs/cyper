@@ -1,4 +1,3 @@
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::net::{Ipv4Addr, SocketAddr};
 
 use axum::{Router, response::Response, routing::any};
@@ -7,7 +6,9 @@ use compio::{
     runtime::Runtime,
     ws::{WebSocketStream, tungstenite::Message as TsMessage},
 };
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use cyper_axum::ws::{Message, WebSocket, WebSocketUpgrade};
+use socket2::Socket;
 
 async fn spawn_server(app: Router) -> SocketAddr {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
@@ -21,7 +22,7 @@ async fn spawn_server(app: Router) -> SocketAddr {
     addr
 }
 
-async fn connect(addr: SocketAddr) -> WebSocketStream<TcpStream> {
+async fn connect(addr: SocketAddr) -> WebSocketStream<Socket> {
     let stream = TcpStream::connect(addr).await.unwrap();
     let (ws, _) = compio::ws::client_async(format!("ws://{addr}/ws"), stream)
         .await
