@@ -11,9 +11,9 @@ repository = "https://github.com/compio-rs/cyper"
 compio = { version = "0.20.0-beta.1", default-features = false }
 compio-log = "0.3.0-beta.1"
 
-cyper-core = { path = "./cyper-core", default-features = false, version = "0.9.0" }
-cyper-axum = { path = "./cyper-axum", default-features = false, version = "0.9.0" }
-cyper-hickory = { path = "./cyper-hickory", default-features = false, version = "0.1.0" }
+cyper-core = { path = "./cyper-core", default-features = false, version = "0.10.0-beta.1" }
+cyper-axum = { path = "./cyper-axum", default-features = false, version = "0.10.0-beta.1" }
+cyper-hickory = { path = "./cyper-hickory", default-features = false, version = "0.2.0-beta.1" }
 socket2 = "0.6"
 
 base64 = "0.23"
