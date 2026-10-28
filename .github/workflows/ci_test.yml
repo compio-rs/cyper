@@ -46,12 +46,9 @@ jobs:
           - os: "windows-latest"
             target: "i686-pc-windows-msvc"
             no_default_features: true
-          - os: "macos-14"
           - os: "macos-15"
           - os: "macos-15"
             features: "nyquest-all"
-          - os: "macos-14"
-            no_default_features: true
           - os: "macos-15"
             no_default_features: true
     steps:
