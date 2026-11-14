@@ -1,18 +1,33 @@
 use std::{
+    future::Future,
     io,
     net::SocketAddr,
-    pin::Pin,
+    pin::{Pin, pin},
     task::{Context, Poll, ready},
+    time::Duration,
 };
 
-use compio::{net::TcpStream, runtime::fd::PollFd, tls::TlsConnector};
+use compio::{
+    net::{TcpStream, ToSocketAddrsAsync},
+    runtime::fd::PollFd,
+    tls::TlsConnector,
+};
 use cyper_core::HyperStream;
-use futures_util::{AsyncRead, AsyncWrite, StreamExt};
+use futures_util::{
+    AsyncRead, AsyncWrite, StreamExt,
+    future::{Either, select},
+    stream::FuturesUnordered,
+};
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
 use socket2::Socket;
 
 use crate::{Error, Result, resolve::SharedResolver};
+
+/// How long a connection attempt may stay pending before the next address is
+/// tried in parallel ("Connection Attempt Delay" of RFC 8305; hyper-util uses
+/// the same default).
+const CONNECTION_ATTEMPT_DELAY: Duration = Duration::from_millis(300);
 
 /// A HTTP stream wrapper, based on compio, and exposes [`hyper::rt`]
 /// interfaces.
@@ -72,27 +87,88 @@ impl HttpStream {
         port: u16,
         resolver: Option<SharedResolver>,
     ) -> Result<TcpStream> {
-        let stream = match resolver {
-            None => TcpStream::connect((host, port)).await?,
-
+        let addrs: Vec<SocketAddr> = match resolver {
+            None => (host, port).to_socket_addrs_async().await?.collect(),
             Some(resolver) => {
-                let addrs = resolver
+                resolver
                     .resolve(uri)
                     .await?
                     .map(|ip| SocketAddr::new(ip, port))
-                    .collect::<Vec<_>>()
-                    .await;
-
-                TcpStream::connect(addrs.as_slice()).await?
+                    .collect()
+                    .await
             }
         };
 
-        Ok(stream)
+        Ok(connect_staggered(addrs, CONNECTION_ATTEMPT_DELAY, TcpStream::connect).await?)
     }
 
     pub fn into_wrapped(self) -> WrappedHttpStream {
         WrappedHttpStream::Plain(self)
     }
+}
+
+/// Connects to the first address that accepts, racing attempts as in RFC 8305
+/// ("Happy Eyeballs"): addresses alternate between the two families, and the
+/// next attempt starts once the previous one has failed or `delay` has passed,
+/// so a stalled address can't hold up the others. Losing attempts are dropped.
+async fn connect_staggered<T, F, Fut>(
+    addrs: Vec<SocketAddr>,
+    delay: Duration,
+    connect: F,
+) -> io::Result<T>
+where
+    F: Fn(SocketAddr) -> Fut,
+    Fut: Future<Output = io::Result<T>>,
+{
+    let mut addrs = interleave_families(addrs).into_iter();
+    let mut attempts = FuturesUnordered::new();
+    let mut last_err = None;
+    loop {
+        if let Some(addr) = addrs.next() {
+            attempts.push(connect(addr));
+        }
+        if attempts.is_empty() {
+            return Err(last_err.unwrap_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "could not resolve to any addresses",
+                )
+            }));
+        }
+        let finished = if addrs.as_slice().is_empty() {
+            attempts.next().await
+        } else {
+            match select(attempts.next(), pin!(compio::time::sleep(delay))).await {
+                Either::Left((finished, _)) => finished,
+                // Leave the pending attempts running and start the next one.
+                Either::Right(_) => continue,
+            }
+        };
+        match finished {
+            Some(Ok(stream)) => return Ok(stream),
+            Some(Err(err)) => last_err = Some(err),
+            None => unreachable!("`attempts` is not empty"),
+        }
+    }
+}
+
+/// Reorders `addrs` to alternate between IPv6 and IPv4, starting with the
+/// family of the first address and keeping the order within each family.
+fn interleave_families(addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
+    let Some(first_is_ipv6) = addrs.first().map(SocketAddr::is_ipv6) else {
+        return addrs;
+    };
+    let (preferred, other): (Vec<_>, Vec<_>) = addrs
+        .into_iter()
+        .partition(|addr| addr.is_ipv6() == first_is_ipv6);
+    let mut other = other.into_iter();
+    let mut interleaved = Vec::with_capacity(preferred.len() + other.len());
+    for addr in preferred {
+        interleaved.push(addr);
+        interleaved.extend(other.next());
+    }
+    interleaved.extend(other);
+    interleaved
 }
 
 #[cfg(tls)]
@@ -316,5 +392,90 @@ impl Connection for WrappedHttpStream {
             #[cfg(tls)]
             WrappedHttpStream::Embedded(s) => s.connected(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{future::pending, time::Instant};
+
+    use super::*;
+
+    fn addr(addr: &str) -> SocketAddr {
+        addr.parse().unwrap()
+    }
+
+    fn refused(addr: SocketAddr) -> io::Error {
+        io::Error::new(io::ErrorKind::ConnectionRefused, addr.to_string())
+    }
+
+    #[test]
+    fn interleave_starts_with_the_first_family() {
+        let (v6a, v6b) = (addr("[2001:db8::1]:443"), addr("[2001:db8::2]:443"));
+        let (v4a, v4b) = (addr("192.0.2.1:443"), addr("192.0.2.2:443"));
+        assert_eq!(
+            interleave_families(vec![v6a, v6b, v4a, v4b]),
+            [v6a, v4a, v6b, v4b]
+        );
+        assert_eq!(interleave_families(vec![v4a, v6a, v6b]), [v4a, v6a, v6b]);
+    }
+
+    #[compio::test]
+    async fn stalled_address_does_not_block_the_next() {
+        let (stalled, reachable) = (addr("[2001:db8::1]:443"), addr("192.0.2.1:443"));
+        let delay = Duration::from_millis(50);
+        let start = Instant::now();
+        let connected = connect_staggered(vec![stalled, reachable], delay, |addr| async move {
+            if addr == stalled {
+                pending().await
+            } else {
+                Ok(addr)
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(connected, reachable);
+        assert!(start.elapsed() >= delay);
+    }
+
+    #[compio::test]
+    async fn failed_attempt_starts_the_next_without_waiting() {
+        let (failing, reachable) = (addr("[2001:db8::1]:443"), addr("192.0.2.1:443"));
+        let connect = connect_staggered(
+            vec![failing, reachable],
+            Duration::from_secs(3600),
+            |addr| async move {
+                if addr == failing {
+                    Err(refused(addr))
+                } else {
+                    Ok(addr)
+                }
+            },
+        );
+        let connected = compio::time::timeout(Duration::from_secs(5), connect)
+            .await
+            .expect("the next attempt waited for the delay")
+            .unwrap();
+        assert_eq!(connected, reachable);
+    }
+
+    #[compio::test]
+    async fn every_address_failing_reports_the_last_error() {
+        let (first, last) = (addr("[2001:db8::1]:443"), addr("192.0.2.1:443"));
+        let err = connect_staggered(
+            vec![first, last],
+            Duration::from_millis(10),
+            |addr| async move { Err::<(), _>(refused(addr)) },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.to_string(), last.to_string());
+
+        let err = connect_staggered(Vec::new(), Duration::from_millis(10), |_| async {
+            Ok::<(), io::Error>(())
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 }
