@@ -4,14 +4,14 @@ use std::{
 };
 
 use futures_util::StreamExt;
-#[cfg(feature = "nyquest-async-stream")]
-use nyquest_interface::{Body, Request};
 use nyquest_interface::{
     Result,
     r#async::{AsyncBackend, AsyncClient, AsyncResponse, Request as AsyncRequest},
     client::ClientOptions,
 };
 
+#[cfg(feature = "nyquest-async-stream")]
+use super::IntoCyperStream;
 use super::{CyperBackend, CyperClient, CyperResponse, to_io_error};
 
 impl AsyncBackend for CyperBackend {
@@ -26,55 +26,14 @@ impl AsyncClient for CyperClient {
     type Response = CyperResponse;
 
     async fn request(&self, req: AsyncRequest) -> Result<Self::Response> {
-        CyperClient::request(
-            self,
-            #[cfg(not(feature = "nyquest-async-stream"))]
-            req,
-            #[cfg(feature = "nyquest-async-stream")]
-            Request {
-                method: req.method,
-                relative_uri: req.relative_uri,
-                additional_headers: req.additional_headers,
-                body: req.body.map(|body| match body {
-                    Body::Stream {
-                        stream,
-                        content_type,
-                    } => Body::Stream {
-                        stream: WrapBoxedStream(stream),
-                        content_type,
-                    },
-                    Body::Bytes {
-                        content,
-                        content_type,
-                    } => Body::Bytes {
-                        content,
-                        content_type,
-                    },
-                    Body::Form { fields } => Body::Form { fields },
-                    #[cfg(feature = "nyquest-multipart")]
-                    Body::Multipart { parts } => Body::Multipart {
-                        parts: parts
-                            .into_iter()
-                            .map(|part| nyquest_interface::Part {
-                                headers: part.headers,
-                                name: part.name,
-                                filename: part.filename,
-                                content_type: part.content_type,
-                                body: match part.body {
-                                    nyquest_interface::PartBody::Bytes { content } => {
-                                        nyquest_interface::PartBody::Bytes { content }
-                                    }
-                                    nyquest_interface::PartBody::Stream(s) => {
-                                        nyquest_interface::PartBody::Stream(WrapBoxedStream(s))
-                                    }
-                                },
-                            })
-                            .collect(),
-                    },
-                }),
-            },
-        )
-        .await
+        CyperClient::request(self, req).await
+    }
+}
+
+#[cfg(feature = "nyquest-async-stream")]
+impl IntoCyperStream for nyquest_interface::r#async::BoxedStream {
+    fn into_cyper_body(self) -> crate::Body {
+        crate::Body::stream(WrapBoxedStream(self))
     }
 }
 
