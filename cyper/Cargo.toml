@@ -31,7 +31,7 @@ h3 = { version = "0.0.8", optional = true }
 hickory-net = { workspace = true, optional = true }
 hickory-resolver = { workspace = true, optional = true }
 
-nyquest-interface = { version = "0.4.0", optional = true }
+nyquest-interface = { version = "0.5.0", optional = true }
 
 rustls-platform-verifier = { workspace = true, optional = true }
 
@@ -62,7 +62,7 @@ compio = { workspace = true, default-features = true, features = ["macros"] }
 cyper-axum = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 
-nyquest = "0.4.0"
+nyquest = "0.5.0"
 
 axum = { workspace = true }
 brotli_crate = { package = "brotli", version = "9" }
@@ -126,7 +126,7 @@ all = [
 
 sync = ["compio/sync"]
 
-nyquest = ["dep:nyquest-interface", "sync", "compio/time"]
+nyquest = ["dep:nyquest-interface", "sync", "compio/time", "cookies"]
 nyquest-async = [
     "nyquest",
     "stream",

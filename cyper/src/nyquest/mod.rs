@@ -1,7 +1,7 @@
 //! Adapters for [`nyquest_interface`].
 //!
-//! This support is experimental. Not all features are implemented.
-//! It might break regardless of semver in future releases.
+//! This support is experimental. It might break regardless of semver in future
+//! releases.
 
 use std::{borrow::Cow, time::Duration};
 
@@ -10,10 +10,13 @@ use http_body_util::BodyExt;
 #[cfg(feature = "nyquest-multipart")]
 use nyquest_interface::PartBody as NyquestPartBody;
 use nyquest_interface::{
-    Body as NyquestBody, Error as NyquestError, Request, Result, client::ClientOptions,
+    Body as NyquestBody, Error as NyquestError, Request, Result,
+    client::{ClientOptions, ProxyOptions},
 };
 use send_wrapper::SendWrapper;
 use url::Url;
+
+use crate::proxy::{NoProxy, Proxy};
 
 /// Register `cyper` as a backend for [`nyquest_interface`].
 pub fn register() {
@@ -34,41 +37,84 @@ pub struct CyperBackend;
 
 impl CyperBackend {
     pub(crate) fn create_client(&self, options: ClientOptions) -> Result<CyperClient> {
-        let mut builder = crate::ClientBuilder::new().default_headers({
-            let mut headers = HeaderMap::new();
-            for (k, v) in options.default_headers {
-                headers.insert(convert_header_name(k)?, convert_header_value(v)?);
-            }
-            headers
-        });
-        if !options.use_default_proxy {
-            builder = builder.no_proxy();
-        }
+        let mut builder = crate::ClientBuilder::new().default_headers(default_headers(&options)?);
+        builder = apply_proxy_options(builder, &options.proxy_options)?;
         if !options.follow_redirects {
             builder = builder.redirect(crate::redirect::Policy::none())
         }
         if options.ignore_certificate_errors {
             builder = builder.danger_accept_invalid_certs(true)
         }
-        #[cfg(feature = "cookies")]
-        let builder = builder.cookie_store(options.use_cookies);
-        let client = builder.build()?;
-        let base_url = if let Some(url) = options.base_url {
-            Some(Url::parse(&url).map_err(|_| NyquestError::InvalidUrl)?)
-        } else {
-            None
+        let client = builder.cookie_store(options.use_cookies).build()?;
+        let base_url = match options.base_url {
+            Some(url) => Some(Url::parse(&url).map_err(|_| NyquestError::InvalidUrl)?),
+            None => None,
         };
         Ok(CyperClient {
             client,
             base_url,
-            user_agent: if let Some(v) = options.user_agent {
-                Some(convert_header_value(v)?)
-            } else {
-                None
-            },
             timeout: options.request_timeout,
             max_buffer_size: options.max_response_buffer_size,
         })
+    }
+}
+
+/// Collects [`ClientOptions::default_headers`] and
+/// [`ClientOptions::user_agent`] into the headers sent with every request.
+fn default_headers(options: &ClientOptions) -> Result<HeaderMap> {
+    let mut headers = HeaderMap::new();
+    for (name, value) in &options.default_headers {
+        headers.insert(
+            convert_header_name(name.clone())?,
+            convert_header_value(value.clone())?,
+        );
+    }
+    if let Some(user_agent) = &options.user_agent {
+        headers.insert(
+            http::header::USER_AGENT,
+            convert_header_value(user_agent.clone())?,
+        );
+    }
+    Ok(headers)
+}
+
+/// Applies [`ClientOptions::proxy_options`] to the client builder.
+fn apply_proxy_options(
+    mut builder: crate::ClientBuilder,
+    options: &ProxyOptions,
+) -> Result<crate::ClientBuilder> {
+    match options {
+        ProxyOptions::Default => {}
+        ProxyOptions::None => builder = builder.no_proxy(),
+        ProxyOptions::Custom {
+            http,
+            https,
+            proxy_bypass,
+        } => {
+            let no_proxy = proxy_bypass.as_deref().and_then(NoProxy::from_string);
+            if let Some(url) = http.as_deref() {
+                builder = builder.proxy(Proxy::http(url)?.no_proxy(no_proxy.clone()));
+            }
+            if let Some(url) = https.as_deref() {
+                builder = builder.proxy(Proxy::https(url)?.no_proxy(no_proxy.clone()));
+            }
+        }
+    }
+    Ok(builder)
+}
+
+/// Converts a streaming request body into a [`crate::Body`].
+pub(crate) trait IntoCyperStream {
+    fn into_cyper_body(self) -> crate::Body;
+}
+
+#[cfg(any(
+    not(feature = "nyquest-async-stream"),
+    not(feature = "nyquest-blocking-stream")
+))]
+impl IntoCyperStream for std::convert::Infallible {
+    fn into_cyper_body(self) -> crate::Body {
+        match self {}
     }
 }
 
@@ -76,17 +122,13 @@ impl CyperBackend {
 #[derive(Clone)]
 pub struct CyperClient {
     client: crate::Client,
-    user_agent: Option<HeaderValue>,
     base_url: Option<Url>,
     timeout: Option<Duration>,
     max_buffer_size: Option<u64>,
 }
 
 impl CyperClient {
-    pub(crate) async fn request<
-        #[cfg(any(feature = "nyquest-async-stream", feature = "nyquest-blocking-stream"))] S: futures_util::Stream<Item = crate::Result<compio::bytes::Bytes>> + Send + 'static,
-        #[cfg(not(any(feature = "nyquest-async-stream", feature = "nyquest-blocking-stream")))] S,
-    >(
+    pub(crate) async fn request<S: IntoCyperStream>(
         &self,
         req: Request<S>,
     ) -> Result<CyperResponse> {
@@ -122,21 +164,10 @@ impl CyperClient {
                         crate::body::Body::from(content.into_owned()),
                         Some(content_type),
                     ),
-                    #[cfg(any(
-                        feature = "nyquest-async-stream",
-                        feature = "nyquest-blocking-stream"
-                    ))]
                     NyquestBody::Stream {
                         stream,
                         content_type,
-                    } => (crate::body::Body::stream(stream), Some(content_type)),
-                    #[cfg(not(any(
-                        feature = "nyquest-async-stream",
-                        feature = "nyquest-blocking-stream"
-                    )))]
-                    NyquestBody::Stream { .. } => {
-                        unreachable!("stream body is not supported without stream feature")
-                    }
+                    } => (stream.into_cyper_body(), Some(content_type)),
                     NyquestBody::Form { fields } => {
                         let body = serde_urlencoded::to_string(fields)
                             .map_err(|e| NyquestError::Io(std::io::Error::other(e)))?
@@ -175,7 +206,7 @@ impl CyperClient {
                                 }
                                 NyquestPartBody::Stream(stream) => {
                                     let mut part_builder =
-                                        crate::multipart::Part::stream(crate::Body::stream(stream));
+                                        crate::multipart::Part::stream(stream.into_cyper_body());
                                     if let Some(filename) = part.filename {
                                         part_builder = part_builder.file_name(filename);
                                     }
@@ -194,11 +225,6 @@ impl CyperClient {
                     http::header::CONTENT_TYPE,
                     convert_header_value(content_type)?,
                 )?
-            } else {
-                builder
-            };
-            let builder = if let Some(user_agent) = &self.user_agent {
-                builder.header(http::header::USER_AGENT, user_agent.clone())?
             } else {
                 builder
             };
@@ -247,8 +273,11 @@ impl CyperResponse {
     }
 
     pub(crate) async fn bytes_impl(&mut self) -> Result<Vec<u8>> {
+        let max_buffer_size = self
+            .max_buffer_size
+            .map(|max| usize::try_from(max).unwrap_or(usize::MAX));
         let mut bufs = vec![];
-        let mut collected_size = 0;
+        let mut collected_size: usize = 0;
         loop {
             let Some(frame) = self.resp.body.frame().await else {
                 break;
@@ -256,13 +285,11 @@ impl CyperResponse {
             let Ok(frame) = frame?.into_data() else {
                 continue;
             };
-            if self
-                .max_buffer_size
-                .is_some_and(|max| collected_size + frame.len() > max as usize)
-            {
+            let size = collected_size.saturating_add(frame.len());
+            if max_buffer_size.is_some_and(|max| size > max) {
                 return Err(NyquestError::ResponseTooLarge);
             }
-            collected_size += frame.len();
+            collected_size = size;
             bufs.push(frame);
         }
         Ok(bufs.concat())
