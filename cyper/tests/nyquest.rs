@@ -22,7 +22,7 @@ fn register_backend() {
 
 fn builder() -> ClientBuilder {
     register();
-    ClientBuilder::default().no_proxy().no_redirects()
+    ClientBuilder::default()
 }
 
 #[cfg(feature = "nyquest-async")]
@@ -117,7 +117,7 @@ async fn proxy_options_custom_http() {
     })
     .await;
 
-    let client = ClientBuilder::default()
+    let client = builder()
         .custom_proxy(CustomProxy::http(format!("http://{}", proxy.addr())))
         .no_redirects()
         .build_async()
@@ -140,7 +140,7 @@ async fn proxy_options_custom_http_bypass() {
     let proxy = server::http(move |_req: axum::extract::Request| async move { "proxied" }).await;
     let target = server::http(move |_req: axum::extract::Request| async move { "direct" }).await;
 
-    let client = ClientBuilder::default()
+    let client = builder()
         .custom_proxy(
             CustomProxy::http(format!("http://{}", proxy.addr())).with_bypass("127.0.0.1"),
         )
@@ -165,7 +165,7 @@ async fn proxy_options_https_only_keeps_http_direct() {
     let proxy = server::http(move |_req: axum::extract::Request| async move { "proxied" }).await;
     let target = server::http(move |_req: axum::extract::Request| async move { "direct" }).await;
 
-    let client = ClientBuilder::default()
+    let client = builder()
         .custom_proxy(CustomProxy::https(format!("http://{}", proxy.addr())))
         .no_redirects()
         .build_async()
@@ -228,7 +228,7 @@ async fn client_options_headers_and_base_url() {
     })
     .await;
 
-    let client = ClientBuilder::default()
+    let client = builder()
         .base_url(format!("http://{}", server.addr()))
         .user_agent("nyquest-test")
         .with_header("x-default", "yes")
